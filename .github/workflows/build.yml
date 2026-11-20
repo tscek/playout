@@ -14,8 +14,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -28,8 +28,8 @@ jobs:
     needs: test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -52,13 +52,16 @@ jobs:
           path: dist/*.exe
           retention-days: 30
 
-      - name: Objavi izdajo (samo za oznake v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Objavi testno izdajo (vsaka gradnja glavne veje)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/*.exe \
-            --title "Playout ${GITHUB_REF_NAME}" \
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then TAG="${GITHUB_REF_NAME}"; else TAG="v${VERSION}-b${GITHUB_RUN_NUMBER}"; fi
+          gh release create "${TAG}" dist/*.exe \
+            --target "${GITHUB_SHA}" \
+            --title "Playout ${TAG}" \
             --notes-file RELEASE_NOTES.md \
             --prerelease
