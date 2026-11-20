@@ -132,6 +132,17 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       if (cmd === 'action') cmd = `action:${find(st.actions, parts.slice(1).join('/'))}`;
       else if (cmd === 'group') cmd = `group:${find(st.groups, parts.slice(1).join('/'))}`;
       else if (cmd === 'titles' && parts[1] === 'off') cmd = 'titlesOff';
+      else if (cmd === 'preset') {
+        // /api/preset/<id> ali /api/preset/<naprava>/<ime preseta>, npr. /api/preset/ATEM/AUTO → Kamera 1
+        const key = parts.slice(1).join('/');
+        const list = controller.actions ? controller.actions.presets() : [];
+        const k = key.toLowerCase();
+        const hit = list.find((p) => p.id === key)
+          || list.find((p) => `${p.group.replace(/^(ATEM|XR18) /, '')}/${p.label}`.toLowerCase() === k)
+          || list.find((p) => p.label.toLowerCase() === k);
+        if (!hit) throw new Error(`Ni najdeno: ${key}`);
+        cmd = `preset:${hit.id}`;
+      }
       else if (cmd === 'title') {
         // /api/title/<ime ali id>[/on|/off|/toggle]
         let rest = parts.slice(1);

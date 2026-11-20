@@ -20,7 +20,41 @@ const XR_CMDS = {
   unmutegroup: 'Mute skupina izklopi',
 };
 const XR_TARGETS = { ch: 'Kanal', bus: 'Bus (aux izhod)', lr: 'Glavni LR', dca: 'DCA', rtn: 'FX povratek', aux: 'Aux vhod' };
-const STEP_LABEL = { atem: 'ATEM', xr18: 'XR18', http: 'HTTP', osc: 'OSC', wait: 'Počakaj', title: 'Napis' };
+const STEP_LABEL = { preset: 'Preset', atem: 'ATEM', xr18: 'XR18', http: 'HTTP', osc: 'OSC', wait: 'Počakaj', title: 'Napis' };
+const presetList = () => (state && state.actions && state.actions.presets) || [];
+function presetName(pid) {
+  const p = presetList().find((x) => x.id === pid);
+  return p ? `${p.group}: ${p.label}` : '(preset ni na voljo)';
+}
+/** Ime akcije: pri akciji iz preseta sledi imenu v napravi. */
+function actionName(a) {
+  if (a.autoName && a.steps.length === 1 && a.steps[0].type === 'preset') {
+    const p = presetList().find((x) => x.id === a.steps[0].target);
+    if (p) return p.label;
+  }
+  return a.name;
+}
+/** Izbira preseta: skupine po napravah in vrstah. */
+function presetSelect(value, onchange) {
+  const s = el('select', 'mini-select');
+  s.add(new Option('(izberi preset)', ''));
+  let og = null;
+  let last = '';
+  for (const p of presetList()) {
+    const g = `${p.group} · ${p.kind}`;
+    if (g !== last) {
+      og = document.createElement('optgroup');
+      og.label = g;
+      s.append(og);
+      last = g;
+    }
+    og.append(new Option(p.label, p.id));
+  }
+  if (value && !presetList().some((p) => p.id === value)) s.add(new Option('(preset ni na voljo)', value));
+  s.value = value || '';
+  s.onchange = () => onchange(s.value);
+  return s;
+}
 const TITLE_CMDS = { on: 'Vklopi', off: 'Umakni', toggle: 'Vklopi / umakni', allOff: 'Vsi napisi dol' };
 const titleItems = () => (state && state.titles ? state.titles.items : []);
 
@@ -34,7 +68,7 @@ function renderActionBar() {
   bar.classList.toggle('hidden', !acts.length);
   bar.innerHTML = '';
   for (const a of acts) {
-    const b = el('button', 'btn act-btn', a.name);
+    const b = el('button', 'btn act-btn', actionName(a));
     if (a.running) b.classList.add('running');
     if (a.last && !a.last.ok) {
       b.classList.add('failed');
@@ -57,6 +91,7 @@ function stepSummary(s) {
     case 'http': return `HTTP ${s.method || 'GET'} ${s.url || ''}`;
     case 'osc': return `OSC ${s.host || ''}:${s.port || ''} ${s.address || ''}`;
     case 'wait': return `Počakaj ${s.ms || 0} ms`;
+    case 'preset': return presetName(s.target);
     case 'title': {
       const t = titleItems().find((x) => x.id === s.target);
       return s.cmd === 'allOff' ? 'Napisi: vsi dol' : `Napis ${TITLE_CMDS[s.cmd] || ''}: ${t ? t.label : '(ni v tem projektu)'}`;
@@ -146,6 +181,7 @@ function stepEditor(a, si) {
     if (v === 'http') Object.assign(base, { method: 'GET', url: 'http://' });
     if (v === 'osc') Object.assign(base, { host: '', port: 8000, address: '/', args: '' });
     if (v === 'wait') Object.assign(base, { ms: 500 });
+    if (v === 'preset') Object.assign(base, { target: (presetList()[0] || {}).id || '' });
     if (v === 'title') Object.assign(base, { cmd: 'on', target: (titleItems()[0] || {}).id || '' });
     const steps = a.steps.map((x, i) => (i === si ? base : x));
     run('actions.save', { action: { ...a, steps } });
@@ -205,6 +241,10 @@ function stepEditor(a, si) {
       field('Naslov', input('text', s.address, (v) => saveStep({ address: v }), { placeholder: '/pot/ukaz' })),
       field('Argumenti', input('text', s.args, (v) => saveStep({ args: v }), { placeholder: 'npr. 1 0.5 besedilo' })));
   }
+  if (s.type === 'preset') {
+    if (!presetList().length) row.append(el('span', 'bad-text', 'Ni presetov: najprej zgoraj dodaj ATEM ali XR18.'));
+    else row.append(field('Preset', presetSelect(s.target, (v) => saveStep({ target: v }))));
+  }
   if (s.type === 'title') {
     row.append(field('Ukaz', select(Object.entries(TITLE_CMDS), s.cmd || 'on', (v) => saveStep({ cmd: v }))));
     if (s.cmd !== 'allOff') {
@@ -247,7 +287,8 @@ function renderActionList() {
   acts.forEach((a, ai) => {
     const card = el('div', 'act-card');
     const head = el('div', 'act-head');
-    const name = input('text', a.name, (v) => run('actions.save', { action: { ...a, name: v } }));
+    const name = input('text', actionName(a), (v) => run('actions.save', { action: { ...a, name: v, autoName: false } }));
+    if (a.autoName) name.title = 'Ime sledi imenu v napravi. Če ga spremeniš, ostane tvoje.';
     name.className = 'group-name';
     const btnL = el('label', 'group-opt');
     const cb = el('input');
@@ -285,9 +326,56 @@ function renderActionList() {
   });
 }
 
+// ---------- preseti ----------
+
+const openPresetGroups = new Set();
+function renderPresets() {
+  const box = $('#preset-list');
+  box.innerHTML = '';
+  const list = presetList();
+  if (!list.length) {
+    box.append(el('div', 'group-empty', 'Preseti nastanejo sami, ko dodaš ATEM ali XR18 (imena vhodov in kanalov preberem iz naprave).'));
+    return;
+  }
+  const groups = new Map();
+  for (const p of list) {
+    const g = `${p.group} · ${p.kind}`;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(p);
+  }
+  for (const [g, items] of groups) {
+    const det = el('details', 'preset-group');
+    det.open = openPresetGroups.has(g);
+    det.ontoggle = () => (det.open ? openPresetGroups.add(g) : openPresetGroups.delete(g));
+    det.append(el('summary', '', `${g} (${items.length})`));
+    const grid = el('div', 'preset-grid');
+    for (const p of items) {
+      const row = el('div', 'preset-row');
+      const go = el('button', `btn small${p.running ? ' running' : ''}`, '▶');
+      go.type = 'button';
+      go.title = 'Izvedi zdaj';
+      go.onclick = () => run('actions.run', { id: `preset:${p.id}` });
+      const pin = el('button', 'item-btn', '＋');
+      pin.type = 'button';
+      pin.title = 'Naredi akcijo z gumbom zgoraj (ime sledi imenu v napravi)';
+      pin.onclick = () => run('actions.save', { action: { name: p.label, autoName: true, showButton: true, steps: [{ type: 'preset', target: p.id }] } });
+      const lab = el('span', 'preset-label', p.label);
+      if (p.last && !p.last.ok) {
+        lab.classList.add('bad-text');
+        lab.title = p.last.error;
+      }
+      row.append(go, lab, pin);
+      grid.append(row);
+    }
+    det.append(grid);
+    box.append(det);
+  }
+}
+
 function renderActionsDialog() {
   if (!$('#dlg-actions').open || editingInDialog()) return;
   renderDevices();
+  renderPresets();
   renderActionList();
 }
 

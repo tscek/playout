@@ -969,3 +969,56 @@ test('tablica: omrežni dostop s PIN in samo dovoljeni ukazi', async () => {
     await engine.stop();
   }
 });
+
+test('preseti iz imen v ATEM in XR18', async () => {
+  const { ActionManager } = require('../main/actions');
+  const { presetStep } = require('../main/presets');
+  const { Xr18Device } = require('../main/devices/xr18');
+  const dir = tmpDir();
+  const file = path.join(dir, 'actions.json');
+  const am = new ActionManager({ file });
+  const atemId = await am.saveDevice({ type: 'atem', name: 'Mini', host: '' });
+  const xrId = await am.saveDevice({ type: 'xr18', name: 'Miza', host: '' });
+  const ran = [];
+  let inputs = [{ id: 1, name: 'Kamera 1' }, { id: 2, name: 'Voditelj' }, { id: 1000, name: 'Bars' }, { id: 10010, name: 'Program' }];
+  const fake = { connected: true, info: () => ({ connected: true, inputs, aux: 1, macros: [{ index: 0, name: 'Intro' }] }), run: async (s) => ran.push(s), stop: async () => {} };
+  am.conns.set(atemId, fake);
+  const xr = new Xr18Device({ id: xrId, name: 'Miza', host: '' });
+  xr.connected = true;
+  xr._onName({ address: '/ch/03/config/name', args: ['Gost'] });
+  xr.run = async (s) => ran.push(s);
+  am.conns.set(xrId, xr);
+  am._updateCache(atemId);
+  am._updateCache(xrId);
+  let ps = am.presets();
+  const lab = (id) => (ps.find((p) => p.id === id) || {}).label;
+  assert.strictEqual(lab(`${atemId}.autoTo.2`), 'AUTO → Voditelj');
+  assert.strictEqual(lab(`${atemId}.aux.1.1`), 'AUX 1 = Kamera 1');
+  assert.strictEqual(lab(`${atemId}.macro.0`), 'Makro: Intro');
+  assert.ok(!ps.some((p) => p.id === `${atemId}.cutTo.10010`), 'interni viri niso ponujeni');
+  assert.strictEqual(lab(`${xrId}.mute.ch.3`), 'Utišaj: Gost (kanal 3)');
+  assert.strictEqual(lab(`${xrId}.mute.lr`), 'Utišaj: glavni izhod LR');
+  // preimenovanje v napravi spremeni ime, id ostane
+  inputs = [{ id: 1, name: 'Kamera 1' }, { id: 2, name: 'Gost' }];
+  am._updateCache(atemId);
+  ps = am.presets();
+  assert.strictEqual(lab(`${atemId}.autoTo.2`), 'AUTO → Gost');
+  await am.run(`preset:${atemId}.autoTo.2`);
+  assert.deepStrictEqual(ran.pop(), { type: 'atem', deviceId: atemId, cmd: 'autoTo', input: 2 });
+  await am.run(`preset:${xrId}.unmutegroup.2`);
+  assert.deepStrictEqual(ran.pop(), { type: 'xr18', deviceId: xrId, cmd: 'unmutegroup', group: 2 });
+  // korak "preset" v akciji
+  const aid = am.saveAction({ name: 'x', autoName: true, steps: [{ type: 'preset', target: `${xrId}.mute.ch.3` }] });
+  await am.run(aid);
+  assert.deepStrictEqual(ran.pop(), { type: 'xr18', deviceId: xrId, cmd: 'mute', target: 'ch', num: 3 });
+  assert.strictEqual(am.actions.find((a) => a.id === aid).autoName, true);
+  // imena ostanejo shranjena, ko naprava ni povezana
+  const am2 = new ActionManager({ file });
+  const ps2 = am2.presets();
+  assert.strictEqual(ps2.find((p) => p.id === `${atemId}.autoTo.2`).label, 'AUTO → Gost');
+  assert.strictEqual(ps2.find((p) => p.id === `${xrId}.unmute.ch.3`).label, 'Vklopi: Gost (kanal 3)');
+  assert.strictEqual(presetStep('neobstaja.cut', am2.devices), null);
+  assert.strictEqual(presetStep(`${atemId}.aux.x.1`, am2.devices), null);
+  await assert.rejects(am2.run('preset:neobstaja.cut'), /ne obstaja/);
+  assert.ok(!('cache' in am2.getState().devices[0]), 'stanje za vmesnik je brez shranjenih imen');
+});

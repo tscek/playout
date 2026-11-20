@@ -9,16 +9,20 @@ const { newId } = require('./media');
 const { encodeMessage } = require('./engine/osc');
 const { AtemDevice } = require('./devices/atem');
 const { Xr18Device } = require('./devices/xr18');
+const { buildPresets, presetStep, cacheFromInfo } = require('./presets');
 
 const DEVICE_TYPES = { atem: AtemDevice, xr18: Xr18Device };
-const STEP_TYPES = ['atem', 'xr18', 'http', 'osc', 'wait', 'title'];
+const STEP_TYPES = ['atem', 'xr18', 'http', 'osc', 'wait', 'title', 'preset'];
 
 function cleanStr(v, max = 200) {
   return typeof v === 'string' ? v.trim().slice(0, max) : '';
 }
 
 function normDevice(d) {
-  return { id: d.id || newId(), type: DEVICE_TYPES[d.type] ? d.type : 'atem', name: cleanStr(d.name, 60) || 'Naprava', host: cleanStr(d.host, 100) };
+  const out = { id: d.id || newId(), type: DEVICE_TYPES[d.type] ? d.type : 'atem', name: cleanStr(d.name, 60) || 'Naprava', host: cleanStr(d.host, 100) };
+  // Zadnja znana imena vhodov/kanalov (za presete, ko naprava ni povezana).
+  if (d.cache && typeof d.cache === 'object' && JSON.stringify(d.cache).length < 20000) out.cache = d.cache;
+  return out;
 }
 
 function normStep(s) {
@@ -38,6 +42,7 @@ function normAction(a) {
     id: a.id || newId(),
     name: cleanStr(a.name, 60) || 'Akcija',
     showButton: a.showButton !== false,
+    autoName: !!a.autoName, // ime = ime preseta (sledi imenu v napravi)
     steps: (Array.isArray(a.steps) ? a.steps : []).slice(0, 50).map(normStep),
   };
 }
@@ -81,12 +86,61 @@ class ActionManager extends EventEmitter {
     const c = new Cls(d);
     c.on('log', (l) => this.log(l));
     c.on('status', () => this.emit('changed'));
+    c.on('names', () => this._updateCache(d.id));
     this.conns.set(d.id, c);
     try {
       c.start();
     } catch (e) {
       this.log(`Naprava ${d.name}: ${e.message}`);
     }
+  }
+
+  /** Naprava je sporočila (nova) imena: shrani jih in osveži presete. */
+  _updateCache(id) {
+    const d = this.devices.find((x) => x.id === id);
+    const c = this.conns.get(id);
+    if (!d || !c || !c.connected) return;
+    const cache = cacheFromInfo(d.type, c.info());
+    if (JSON.stringify(cache) === JSON.stringify(d.cache || null)) return;
+    d.cache = cache;
+    this._save();
+  }
+
+  /** Preseti iz vseh naprav (imena sproti iz naprave, sicer zadnja znana). */
+  presets() {
+    return buildPresets(this.devices, (d) => {
+      const c = this.conns.get(d.id);
+      return c && c.connected ? cacheFromInfo(d.type, c.info()) : d.cache || {};
+    });
+  }
+
+  presetLabel(pid) {
+    const p = this.presets().find((x) => x.id === pid);
+    if (!p) return pid;
+    const dev = this.devices.find((d) => pid.startsWith(`${d.id}.`));
+    return `${dev ? dev.name : ''}: ${p.label}`;
+  }
+
+  /** Izvede preset (en ukaz). */
+  async runPreset(pid, why = '') {
+    const step = presetStep(pid, this.devices);
+    if (!step) throw new Error('Preset ne obstaja (naprava je bila morda odstranjena)');
+    const key = `preset:${pid}`;
+    const label = this.presetLabel(pid);
+    this.running.add(key);
+    this.emit('changed');
+    this.log(`Preset "${label}"${why ? ` (${why})` : ''}`);
+    let error = '';
+    try {
+      await this._runStep(step);
+    } catch (e) {
+      error = e.message;
+      this.log(`Preset "${label}": ${error}`);
+    }
+    this.running.delete(key);
+    this.lastResult[key] = { ok: !error, error, at: Date.now() };
+    this.emit('changed');
+    if (error) throw new Error(`${label}: ${error}`);
   }
 
   _save() {
@@ -96,11 +150,14 @@ class ActionManager extends EventEmitter {
 
   getState() {
     return {
-      devices: this.devices.map((d) => {
+      devices: this.devices.map(({ cache, ...d }) => {
         const c = this.conns.get(d.id);
         return { ...d, ...(c ? c.info() : { connected: false }) };
       }),
       actions: this.actions.map((a) => ({ ...a, running: this.running.has(a.id), last: this.lastResult[a.id] || null })),
+      presets: this.presets().map(({ step, ...p }) => ({
+        ...p, running: this.running.has(`preset:${p.id}`), last: this.lastResult[`preset:${p.id}`] || null,
+      })),
     };
   }
 
@@ -109,6 +166,7 @@ class ActionManager extends EventEmitter {
   async saveDevice(dev) {
     const d = normDevice(dev || {});
     const i = this.devices.findIndex((x) => x.id === d.id);
+    if (i !== -1 && !d.cache && this.devices[i].cache && this.devices[i].type === d.type) d.cache = this.devices[i].cache;
     if (i === -1) this.devices.push(d);
     else this.devices[i] = d;
     const old = this.conns.get(d.id);
@@ -153,6 +211,7 @@ class ActionManager extends EventEmitter {
 
   /** Izvede akcijo. Napake ne ustavijo programa; zapišejo se v dnevnik in pokažejo pri gumbu. */
   async run(id, why = '') {
+    if (String(id).startsWith('preset:')) return this.runPreset(String(id).slice(7), why);
     const a = this.actions.find((x) => x.id === id);
     if (!a) throw new Error('Akcija ne obstaja');
     this.running.add(id);
@@ -214,6 +273,12 @@ class ActionManager extends EventEmitter {
         }
         const buf = encodeMessage(step.address, parseOscArgs(step.args));
         await new Promise((res, rej) => this._udp.send(buf, step.port, step.host, (e) => (e ? rej(e) : res())));
+        return;
+      }
+      case 'preset': {
+        const inner = presetStep(step.target, this.devices);
+        if (!inner) throw new Error('Preset ne obstaja (naprava je bila morda odstranjena)');
+        await this._runStep(inner);
         return;
       }
       case 'title':

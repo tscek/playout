@@ -45,6 +45,29 @@ class Xr18Device extends EventEmitter {
     this.model = '';
     this._lastReply = 0;
     this._poll = null;
+    this.names = { ch: {}, bus: {}, dca: {} }; // imena iz mize (za presete)
+    this._namesAt = 0;
+  }
+
+  /** Vpraša mizo za imena kanalov, busov in DCA (odgovori pridejo kot /ch/01/config/name "Voditelj"). */
+  _askNames() {
+    this._namesAt = Date.now();
+    for (let i = 1; i <= 16; i++) this._send(`/ch/${String(i).padStart(2, '0')}/config/name`);
+    for (let i = 1; i <= 6; i++) this._send(`/bus/${i}/config/name`);
+    for (let i = 1; i <= 4; i++) this._send(`/dca/${i}/config/name`);
+  }
+
+  _onName(m) {
+    const r = /^\/(ch|bus|dca)\/(\d+)\/config\/name$/.exec(m.address);
+    if (!r || typeof m.args[0] !== 'string') return false;
+    const kind = r[1];
+    const n = Number(r[2]);
+    const name = m.args[0].trim();
+    if ((this.names[kind][n] || '') !== name) {
+      this.names[kind][n] = name;
+      this._namesChanged = true;
+    }
+    return true;
   }
 
   start() {
@@ -57,9 +80,16 @@ class Xr18Device extends EventEmitter {
       this._lastReply = Date.now();
       for (const m of msgs) {
         if (m.address === '/xinfo' && m.args.length >= 3) this.model = `${m.args[2]} ${m.args[3] || ''}`.trim();
+        else this._onName(m);
+      }
+      if (this._namesChanged) {
+        this._namesChanged = false;
+        clearTimeout(this._namesTimer);
+        this._namesTimer = setTimeout(() => this.emit('names'), 300);
       }
       if (!this.connected) {
         this.connected = true;
+        setTimeout(() => { if (this.connected) this._askNames(); }, 100);
         this.emit('log', `XR18 ${this.name}: povezan${this.model ? ` (${this.model})` : ''}`);
         this.emit('status');
       }
@@ -74,7 +104,11 @@ class Xr18Device extends EventEmitter {
         }
       };
       ping();
-      this._poll = setInterval(ping, 3000);
+      this._poll = setInterval(() => {
+        ping();
+        // Imena preberemo ob povezavi in potem vsakih 30 s (če jih kdo spremeni na mizi).
+        if (this.connected && Date.now() - this._namesAt > 30000) this._askNames();
+      }, 3000);
     });
   }
 
@@ -88,7 +122,7 @@ class Xr18Device extends EventEmitter {
   }
 
   info() {
-    return { connected: this.connected, model: this.model };
+    return { connected: this.connected, model: this.model, names: this.names };
   }
 
   _send(address, args = []) {

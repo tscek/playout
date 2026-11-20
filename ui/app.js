@@ -597,8 +597,23 @@ function entryEditor(e, g) {
   const actSel = (value) => {
     const sel = el('select', 'mini-select');
     sel.add(new Option('—', ''));
-    for (const a of acts) sel.add(new Option(a.name, a.id));
-    if (value && !acts.some((a) => a.id === value)) sel.add(new Option('(izbrisana akcija)', value));
+    const og = document.createElement('optgroup');
+    og.label = 'Akcije';
+    for (const a of acts) og.append(new Option(typeof actionName === 'function' ? actionName(a) : a.name, a.id));
+    if (acts.length) sel.append(og);
+    let pg = null;
+    let last = '';
+    for (const p of (state.actions && state.actions.presets) || []) {
+      const g = `${p.group} · ${p.kind}`;
+      if (g !== last) {
+        pg = document.createElement('optgroup');
+        pg.label = `Preset: ${g}`;
+        sel.append(pg);
+        last = g;
+      }
+      pg.append(new Option(p.label, `preset:${p.id}`));
+    }
+    if (value && ![...sel.options].some((o) => o.value === value)) sel.add(new Option(value.startsWith('preset:') ? '(preset ni na voljo)' : '(izbrisana akcija)', value));
     sel.value = value || '';
     return sel;
   };
@@ -1425,6 +1440,7 @@ function runHotkey(cmd) {
   else if (cmd.startsWith('group:')) run('playlist.cueGroup', { groupId: cmd.slice(6) });
   else if (cmd.startsWith('title:')) run('titles.toggle', { id: cmd.slice(6) });
   else if (cmd === 'titlesOff') run('titles.allOff');
+  else if (cmd.startsWith('preset:')) run('actions.run', { id: cmd });
 }
 
 let libSearch = '';
@@ -1532,11 +1548,14 @@ function renderHotkeys() {
   if (!box || !state) return;
   const hk = state.settings.hotkeys || {};
   const rows = Object.keys(HOTKEY_LABEL).map((k) => [k, HOTKEY_LABEL[k]]);
-  for (const a of (state.actions && state.actions.actions) || []) rows.push([`action:${a.id}`, `Akcija: ${a.name}`]);
+  for (const a of (state.actions && state.actions.actions) || []) rows.push([`action:${a.id}`, `Akcija: ${typeof actionName === 'function' ? actionName(a) : a.name}`]);
   for (const g of state.playlist) rows.push([`group:${g.id}`, `Skupina v preview: ${g.name}`]);
   for (const t of (state.titles && state.titles.items) || []) rows.push([`title:${t.id}`, `Napis vklop/izklop: ${t.label}`]);
+  for (const p of (state.actions && state.actions.presets) || []) rows.push([`preset:${p.id}`, `${p.group}: ${p.label}`]);
   box.innerHTML = '';
+  const q = ($('#hotkey-filter').value || '').trim().toLowerCase();
   for (const [cmd, label] of rows) {
+    if (q && !label.toLowerCase().includes(q) && !accLabel(hk[cmd]).toLowerCase().includes(q)) continue;
     const row = el('div', 'hk-row');
     const b = el('button', 'btn ghost small hk-key' + (hotkeyCapture === cmd ? ' capture' : ''), hotkeyCapture === cmd ? 'pritisni tipko … (Esc)' : accLabel(hk[cmd]) || '—');
     b.type = 'button';
@@ -1554,6 +1573,7 @@ function renderHotkeys() {
   $('#set-global-hotkeys').checked = !!state.settings.globalHotkeys;
   $('#api-url').textContent = `${location.origin}/api/cut`;
 }
+$('#hotkey-filter').addEventListener('input', () => renderHotkeys());
 $('#set-global-hotkeys').onchange = (e) => settingsPatch({ globalHotkeys: e.target.checked });
 
 // Tablica

@@ -1444,6 +1444,7 @@ class Controller extends EventEmitter {
       return this.step('preview', c.endsWith('Sec') ? steps[c] : steps[c] / fps);
     }
     if (c.startsWith('action:')) return this.runAction(c.slice(7));
+    if (c.startsWith('preset:')) return this.runAction(c);
     if (c.startsWith('group:')) return this.cueGroup(c.slice(6));
     if (c.startsWith('title:')) return this.titleToggle(c.slice(6));
     if (c === 'titlesOff') return this.titlesAllOff();

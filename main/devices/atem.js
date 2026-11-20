@@ -27,6 +27,14 @@ class AtemDevice extends EventEmitter {
       this.model = (st && st.info && st.info.productIdentifier) || 'ATEM';
       this.emit('log', `ATEM ${this.name}: povezan (${this.model})`);
       this.emit('status');
+      this.emit('names');
+    });
+    // Imena vhodov in makrov se lahko spremenijo v ATEM Software Control.
+    this.atem.on('stateChanged', (st, paths) => {
+      if (paths.some((p) => p.startsWith('inputs') || p.startsWith('macro.macroProperties'))) {
+        clearTimeout(this._namesTimer);
+        this._namesTimer = setTimeout(() => this.emit('names'), 300);
+      }
     });
     this.atem.on('disconnected', () => {
       this.connected = false;

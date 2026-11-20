@@ -249,23 +249,60 @@ function renderTitles() {
   if (!T.items.length) box.append(el('div', 'empty', 'Ni napisov. Napise pripraviš na računalniku (zavihek Napisi).'));
 }
 
+const openGroups = new Set(JSON.parse(lsGet('remoteGroups', '[]')));
+function actionName(a) {
+  if (a.autoName && a.steps.length === 1 && a.steps[0].type === 'preset') {
+    const p = ((state.actions && state.actions.presets) || []).find((x) => x.id === a.steps[0].target);
+    if (p) return p.label;
+  }
+  return a.name;
+}
 function renderActions() {
-  const A = state.actions || { actions: [] };
+  const A = state.actions || { actions: [], presets: [] };
   const box = $('#p-actions');
+  const scroll = box.scrollTop;
   box.innerHTML = '';
   const grid = el('div', 'acts');
   for (const a of A.actions) {
-    const b = el('button', '', a.name);
+    const b = el('button', '', actionName(a));
     if (a.running) b.classList.add('running');
-    if (a.lastResult && a.lastResult.ok === false) {
+    if (a.last && a.last.ok === false) {
       b.classList.add('err');
-      b.title = a.lastResult.error || '';
+      b.title = a.last.error || '';
     }
     b.onclick = () => run('actions.run', { id: a.id });
     grid.append(b);
   }
   box.append(grid);
-  if (!A.actions.length) box.append(el('div', 'empty', 'Ni akcij. Pripraviš jih na računalniku (Akcije).'));
+  if (!A.actions.length && !(A.presets || []).length) box.append(el('div', 'empty', 'Ni akcij. Pripraviš jih na računalniku (Akcije).'));
+  // Preseti iz naprav, po skupinah (odprte skupine si zapomni)
+  const groups = new Map();
+  for (const p of A.presets || []) {
+    const g = `${p.group} · ${p.kind}`;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(p);
+  }
+  for (const [g, items] of groups) {
+    const det = el('details', 'pgrp');
+    det.open = openGroups.has(g);
+    det.ontoggle = () => {
+      if (det.open) openGroups.add(g);
+      else openGroups.delete(g);
+      lsSet('remoteGroups', JSON.stringify([...openGroups]));
+    };
+    det.append(el('summary', '', g));
+    const pg = el('div', 'acts');
+    for (const p of items) {
+      const b = el('button', '', p.label);
+      if (p.running) b.classList.add('running');
+      if (p.last && p.last.ok === false) b.classList.add('err');
+      b.onclick = () => run('actions.run', { id: `preset:${p.id}` });
+      pg.append(b);
+    }
+    det.append(pg);
+    box.append(det);
+  }
+  box.scrollTop = scroll;
 }
 
 function setTab(t) {

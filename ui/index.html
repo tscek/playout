@@ -211,6 +211,7 @@
       <div class="field">
         <span>Bližnjice</span>
         <small>Klikni tipko pri ukazu in pritisni novo (lahko s Ctrl, Alt, Shift). ✕ odstrani. Enaka tipka ne more imeti dveh ukazov.</small>
+        <input id="hotkey-filter" class="text-input" type="search" placeholder="🔍 Išči ukaz (npr. Kamera 1, napis, AUX) …" autocomplete="off">
         <div id="hotkey-list" class="hotkey-list"></div>
         <label class="act-field"><input type="checkbox" id="set-global-hotkeys"> Delujejo tudi, ko okno Playout ni v ospredju
           (samo F-tipke in kombinacije s Ctrl ali Alt)</label>
@@ -404,6 +405,10 @@
         <button type="button" class="btn ghost small" id="btn-add-atem">+ ATEM</button>
         <button type="button" class="btn ghost small" id="btn-add-xr18">+ XR18 mešalna miza</button>
       </div>
+      <h3>Preseti iz naprav</h3>
+      <p class="about">Pripravljeni ukazi z imeni iz ATEM in XR18 (če kamero preimenuješ v napravi, se ime spremeni tudi tu).
+        ▶ izvede, ＋ naredi gumb zgoraj. Preset lahko dodaš kot korak v akcijo, na začetek/konec vnosa, na bližnjico, v Companion ali na tablico.</p>
+      <div id="preset-list" class="preset-list"></div>
       <h3>Akcije</h3>
       <div id="act-list" class="act-list"></div>
       <div class="row-btns"><button type="button" class="btn ghost small" id="btn-add-action">+ Akcija</button></div>
