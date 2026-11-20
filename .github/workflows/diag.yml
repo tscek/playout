@@ -1,0 +1,10 @@
+name: Diagnostika
+on:
+  push:
+    branches: [diag]
+jobs:
+  displays:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: node dev/displays-raw.js
