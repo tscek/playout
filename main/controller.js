@@ -12,9 +12,26 @@ const { VIDEO_MODES } = require('./engine/caspar-config');
 const { describeDisplay } = require('./engine/displays');
 
 const PROGRAM_CHANNEL = 1;
+const PREVIEW_CHANNEL = 2;
 const LAYER_MAIN = 10;
+const MONITOR_CONSUMER = 900; // številka "consumerja" za monitor v vmesniku
+
+const TRANSITIONS = {
+  MIX: 'Preliv (dissolve)',
+  VFADE: 'Čez črno',
+  WIPE: 'Brisanje (wipe)',
+  SLIDE: 'Drsenje (slide)',
+  PUSH: 'Potisk (push)',
+};
+const DIRECTIONS = { LEFT: 'v levo', RIGHT: 'v desno', UP: 'navzgor', DOWN: 'navzdol' };
 
 const DEFAULT_SETTINGS = {
+  transitionType: 'MIX',
+  transitionFrames: 12,
+  transitionDirection: 'LEFT',
+  previewMode: true, // false = klik gre neposredno na program
+  directTake: 'cut', // v načinu brez preview: 'cut' ali 'auto'
+  autoNext: true, // po prehodu naloži naslednji posnetek v preview
   videoMode: '1080p5000',
   programOutput: 'auto', // 'auto' = prvi zaslon, ki ni glavni; 'test' = okno; sicer ime zaslona (npr. \\.\DISPLAY2)
   audioDevice: '', // '' = privzeta naprava sistema
@@ -35,8 +52,10 @@ class Controller extends EventEmitter {
    * @param {string} o.dataDir
    * @param {() => Promise<object[]>} o.listDisplays
    */
-  constructor({ engine, dataDir, listDisplays, templateDir }) {
+  constructor({ engine, dataDir, listDisplays, templateDir, monitors = null, osc = null }) {
     super();
+    this.monitors = monitors; // { 1: ChannelMonitor, 2: ChannelMonitor }
+    this.osc = osc;
     this.engine = engine;
     this.dataDir = dataDir;
     this.listDisplaysFn = listDisplays;
@@ -52,6 +71,10 @@ class Controller extends EventEmitter {
     this.displays = [];
     this.audioDevices = [];
     this.program = { item: null, startedAt: 0 }; // kaj je na programu
+    this.preview = { item: null }; // kaj je v preview
+    this.cuedId = null; // posnetek, ki je že naložen v ozadje programa (za takojšen CUT)
+    this.times = { 1: null, 2: null }; // { elapsed, total } iz OSC
+    this._timeEmitAt = 0;
     this.lastError = '';
     this.displaysError = '';
     this.audioWarning = '';
@@ -63,7 +86,14 @@ class Controller extends EventEmitter {
       this.lastError = this.audioWarning;
       this._changed();
     });
-    engine.on('ready', () => this._restoreProgram());
+    engine.on('ready', () => this._onEngineReady());
+
+    if (osc) osc.on('message', (m) => this._onOsc(m));
+    if (monitors) {
+      for (const ch of Object.keys(monitors)) {
+        monitors[ch].on('disconnected', () => this._onMonitorLost(Number(ch)));
+      }
+    }
   }
 
   // ---------- stanje za vmesnik ----------
@@ -83,8 +113,14 @@ class Controller extends EventEmitter {
       programOutputResolved: this.resolvedOutput(),
       library: this.library.items.map((it) => ({ ...it, missing: !fileExists(it.path) })),
       program: this.program.item
-        ? { id: this.program.item.id, name: this.program.item.name, startedAt: this.program.startedAt }
+        ? { id: this.program.item.id, name: this.program.item.name, type: this.program.item.type, loop: !!this.program.item.loop, startedAt: this.program.startedAt }
         : null,
+      preview: this.preview.item
+        ? { id: this.preview.item.id, name: this.preview.item.name, type: this.preview.item.type, loop: !!this.preview.item.loop }
+        : null,
+      transitions: TRANSITIONS,
+      directions: DIRECTIONS,
+      times: this.times,
       lastError: this.lastError,
     };
   }
@@ -131,10 +167,21 @@ class Controller extends EventEmitter {
       audioDevice: s.audioDevice || null,
       audioDelayFrames: Math.max(0, Number(s.audioDelayFrames) || 0),
       templateDir: this.templateDir,
+      oscPort: this.osc ? this.osc.port : undefined,
     };
   }
 
   async init() {
+    if (this.osc && !this.osc.socket) {
+      try {
+        await this.osc.start();
+      } catch (e) {
+        this.engine._log(`OSC ni na voljo: ${e.message}`);
+      }
+    }
+    if (this.monitors) {
+      for (const m of Object.values(this.monitors)) if (!m.server) await m.start();
+    }
     await this.refreshDisplays();
     await this.engine.start(this.engineOptions());
   }
@@ -165,8 +212,15 @@ class Controller extends EventEmitter {
 
   async updateSettings(patch) {
     const allowed = ['videoMode', 'programOutput', 'audioDevice', 'audioDelayFrames'];
+    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext'];
     const next = { ...this.settings };
-    for (const k of allowed) if (k in patch) next[k] = patch[k];
+    for (const k of [...allowed, ...operational]) if (k in patch) next[k] = patch[k];
+    if (!TRANSITIONS[next.transitionType]) next.transitionType = 'MIX';
+    if (!DIRECTIONS[next.transitionDirection]) next.transitionDirection = 'LEFT';
+    next.transitionFrames = Math.max(1, Math.min(250, Math.round(Number(next.transitionFrames) || 12)));
+    next.previewMode = !!next.previewMode;
+    next.autoNext = !!next.autoNext;
+    next.directTake = next.directTake === 'auto' ? 'auto' : 'cut';
     if (!VIDEO_MODES[next.videoMode]) this._error('Neznan video način');
     next.audioDelayFrames = Math.max(0, Math.min(25, Math.round(Number(next.audioDelayFrames) || 0)));
     if (next.audioDevice !== this.settings.audioDevice) this.audioWarning = '';
@@ -222,10 +276,33 @@ class Controller extends EventEmitter {
     this._saveLibrary();
   }
 
-  // ---------- program ----------
+  // ---------- preview / program ----------
 
-  _playCommand(item, seekFrames = 0) {
-    let cmd = `PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN} ${quote(mediaPath(item.path))}`;
+  _item(id) {
+    const item = this.library.items.find((x) => x.id === id);
+    if (!item) this._error('Posnetek ni v knjižnici');
+    return item;
+  }
+
+  _requireEngine() {
+    if (this.engine.status !== 'running') this._error('Motor ne teče');
+  }
+
+  _checkFile(item) {
+    if (!fs.existsSync(item.path)) this._error(`Datoteka ne obstaja: ${item.path}`);
+  }
+
+  /** Del ukaza za prehod, npr. "MIX 12 LINEAR" ali "WIPE 12 LINEAR LEFT". */
+  transitionPart() {
+    const s = this.settings;
+    const t = TRANSITIONS[s.transitionType] ? s.transitionType : 'MIX';
+    const dur = Math.max(1, Math.round(Number(s.transitionFrames) || 12));
+    const dir = ['WIPE', 'SLIDE', 'PUSH'].includes(t) ? ` ${s.transitionDirection || 'LEFT'}` : '';
+    return `${t} ${dur} LINEAR${dir}`;
+  }
+
+  _mediaArgs(item, seekFrames = 0) {
+    let cmd = quote(mediaPath(item.path));
     if (item.type !== 'image') {
       if (item.loop) cmd += ' LOOP';
       if (seekFrames > 0) cmd += ` SEEK ${Math.floor(seekFrames)} IN 0`;
@@ -233,26 +310,176 @@ class Controller extends EventEmitter {
     return cmd;
   }
 
-  async play(id) {
-    const item = this.library.items.find((x) => x.id === id);
-    if (!item) this._error('Posnetek ni v knjižnici');
-    if (!fs.existsSync(item.path)) this._error(`Datoteka ne obstaja: ${item.path}`);
-    if (this.engine.status !== 'running') this._error('Motor ne teče');
+  _playCommand(item, seekFrames = 0, transition = '') {
+    return `PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item, seekFrames)}${transition ? ' ' + transition : ''}`;
+  }
+
+  async _cue(item) {
+    // Preview pokaže prvo sličico, program ima posnetek že odprt v ozadju (takojšen CUT).
+    this.cuedId = null;
+    await this.engine.send(`LOAD ${PREVIEW_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item)}`);
+    await this.engine.send(`LOADBG ${PROGRAM_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item)}`);
+    this.cuedId = item.id;
+  }
+
+  /** Naloži posnetek v PREVIEW. */
+  async loadPreview(id) {
+    const item = this._item(id);
+    this._checkFile(item);
+    this.preview = { item: { ...item } };
+    this.lastError = '';
+    this._changed();
+    if (this.engine.status !== 'running') return;
     try {
-      await this.engine.send(this._playCommand(item));
+      await this._cue(item);
+    } catch (e) {
+      this._error(`Nalaganje v preview ni uspelo: ${e.message}`);
+    }
+  }
+
+  async clearPreview() {
+    this.preview = { item: null };
+    this.cuedId = null;
+    this._changed();
+    if (this.engine.status === 'running') {
+      await this.engine.send(`CLEAR ${PREVIEW_CHANNEL}-${LAYER_MAIN}`);
+      await this.engine.send(`LOADBG ${PROGRAM_CHANNEL}-${LAYER_MAIN} EMPTY`);
+    }
+  }
+
+  /** Preview gre na program. kind: 'cut' ali 'auto'. */
+  async take(kind = 'cut') {
+    const item = this.preview.item;
+    if (!item) this._error('Preview je prazen');
+    this._requireEngine();
+    this._checkFile(item);
+    try {
+      if (kind === 'cut' && this.cuedId === item.id) {
+        await this.engine.send(`PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
+      } else {
+        await this.engine.send(this._playCommand(item, 0, kind === 'auto' ? this.transitionPart() : ''));
+      }
+    } catch (e) {
+      this._error(`Prehod ni uspel: ${e.message}`);
+    }
+    this.cuedId = null;
+    this.program = { item: { ...item }, startedAt: Date.now() };
+    this.times[PROGRAM_CHANNEL] = null;
+    this.lastError = '';
+    this._changed();
+    await this._afterTake(item);
+  }
+
+  async _afterTake(item) {
+    if (this.settings.autoNext) {
+      const items = this.library.items;
+      const idx = items.findIndex((x) => x.id === item.id);
+      const next = idx >= 0 ? items[idx + 1] : null;
+      if (next) {
+        try {
+          await this.loadPreview(next.id);
+        } catch { /* napaka je že prikazana */ }
+        return;
+      }
+      await this.clearPreview();
+      return;
+    }
+    // Brez samodejnega naslednjega: isti posnetek ostane pripravljen.
+    try {
+      await this._cue(item);
+    } catch { /* ni kritično */ }
+  }
+
+  /** Način brez preview: posnetek gre neposredno na program. */
+  async playDirect(id, kind) {
+    const item = this._item(id);
+    this._checkFile(item);
+    this._requireEngine();
+    const k = kind || this.settings.directTake;
+    try {
+      await this.engine.send(this._playCommand(item, 0, k === 'auto' ? this.transitionPart() : ''));
     } catch (e) {
       this._error(`Predvajanje ni uspelo: ${e.message}`);
     }
+    this.cuedId = null;
     this.program = { item: { ...item }, startedAt: Date.now() };
+    this.times[PROGRAM_CHANNEL] = null;
     this.lastError = '';
     this._changed();
   }
 
-  async clearProgram() {
+  /** Združljivost s 1. korakom. */
+  play(id) {
+    return this.playDirect(id, 'cut');
+  }
+
+  /** Počisti program. withTransition = zatemnitev s trenutnim trajanjem prehoda. */
+  async clearProgram(withTransition = false) {
     this.program = { item: null, startedAt: 0 };
+    this.times[PROGRAM_CHANNEL] = null;
     this._changed();
-    if (this.engine.status === 'running') {
+    if (this.engine.status !== 'running') return;
+    if (withTransition) {
+      const dur = Math.max(1, Math.round(Number(this.settings.transitionFrames) || 12));
+      await this.engine.send(`PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN} EMPTY MIX ${dur} LINEAR`);
+    } else {
       await this.engine.send(`CLEAR ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
+    }
+    // Ozadje programa je bilo morda izpraznjeno; preview ponovno pripravimo.
+    if (this.preview.item) {
+      try {
+        await this._cue(this.preview.item);
+      } catch { /* ni kritično */ }
+    }
+  }
+
+  // ---------- motor: obnova, monitorji, čas ----------
+
+  async _onEngineReady() {
+    await this._addMonitors();
+    await this._restoreProgram();
+    if (this.preview.item) {
+      try {
+        await this._cue(this.preview.item);
+      } catch { /* ni kritično */ }
+    }
+  }
+
+  async _addMonitors() {
+    if (!this.monitors) return;
+    for (const [ch, m] of Object.entries(this.monitors)) {
+      try {
+        await this.engine.send(m.addCommand(MONITOR_CONSUMER));
+      } catch (e) {
+        this.engine._log(`Monitor kanala ${ch} ni na voljo: ${e.message}`);
+      }
+    }
+  }
+
+  async _onMonitorLost(ch) {
+    // Monitor je samo za ogled; če se prekine, ga v miru dodamo znova.
+    if (this.engine.status !== 'running' || !this.monitors) return;
+    setTimeout(async () => {
+      if (this.engine.status !== 'running' || this.monitors[ch].connected) return;
+      try {
+        await this.engine.send(`REMOVE ${ch}-${MONITOR_CONSUMER}`).catch(() => {});
+        await this.engine.send(this.monitors[ch].addCommand(MONITOR_CONSUMER));
+      } catch { /* poskusimo ob naslednjem zagonu */ }
+    }, 2000);
+  }
+
+  _onOsc({ address, args }) {
+    const m = /^\/channel\/(\d+)\/stage\/layer\/(\d+)\/foreground\/file\/time$/.exec(address);
+    if (!m || Number(m[2]) !== LAYER_MAIN) return;
+    const ch = Number(m[1]);
+    if (ch !== PROGRAM_CHANNEL && ch !== PREVIEW_CHANNEL) return;
+    const [elapsed, total] = args;
+    if (typeof elapsed !== 'number') return;
+    this.times[ch] = { elapsed, total: typeof total === 'number' ? total : 0 };
+    const now = Date.now();
+    if (now - this._timeEmitAt > 200) {
+      this._timeEmitAt = now;
+      this.emit('times', this.times);
     }
   }
 
@@ -273,4 +500,4 @@ class Controller extends EventEmitter {
   }
 }
 
-module.exports = { Controller, fpsOf, PROGRAM_CHANNEL, LAYER_MAIN };
+module.exports = { Controller, fpsOf, PROGRAM_CHANNEL, PREVIEW_CHANNEL, LAYER_MAIN, MONITOR_CONSUMER, TRANSITIONS };

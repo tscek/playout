@@ -161,3 +161,56 @@ test('nastavitve: izbran zaslon gre v konfiguracijo', async () => {
     await engine.stop();
   }
 });
+
+test('preview/program: nalaganje, CUT iz ozadja, AUTO s prehodom, naslednji v preview', async () => {
+  const { ctl, engine, sent, dir } = makeController();
+  try {
+    const a = path.join(dir, 'a.mp4');
+    const b = path.join(dir, 'b.png');
+    fs.writeFileSync(a, 'x');
+    fs.writeFileSync(b, 'x');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([a, b]);
+    const [ia, ib] = ctl.library.items;
+
+    await ctl.loadPreview(ia.id);
+    assert.ok(sent.some((c) => c.startsWith('LOAD 2-10 "') && c.endsWith('a.mp4"')));
+    assert.ok(sent.some((c) => c.startsWith('LOADBG 1-10 "') && c.endsWith('a.mp4"')));
+
+    sent.length = 0;
+    await ctl.take('cut');
+    assert.strictEqual(sent[0], 'PLAY 1-10'); // takojšen preklop iz ozadja
+    assert.strictEqual(ctl.program.item.id, ia.id);
+    assert.strictEqual(ctl.preview.item.id, ib.id); // samodejno naslednji
+
+    sent.length = 0;
+    await ctl.updateSettings({ transitionType: 'WIPE', transitionFrames: 20, transitionDirection: 'RIGHT' });
+    await ctl.take('auto');
+    assert.match(sent[0], /^PLAY 1-10 ".*b\.png" WIPE 20 LINEAR RIGHT$/);
+    assert.strictEqual(ctl.preview.item, null); // zadnji v seznamu
+
+    sent.length = 0;
+    await ctl.playDirect(ia.id, 'auto');
+    assert.match(sent[0], /^PLAY 1-10 ".*a\.mp4" WIPE 20 LINEAR RIGHT$/);
+
+    sent.length = 0;
+    await ctl.clearProgram(true);
+    assert.strictEqual(sent[0], 'PLAY 1-10 EMPTY MIX 20 LINEAR');
+  } finally {
+    await engine.stop();
+  }
+});
+
+test('OSC: razčlenitev sporočila s časom posnetka', () => {
+  const { parsePacket } = require('../main/engine/osc');
+  const pad = (s) => { const b = Buffer.from(s + '\0'); return Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4)]); };
+  const msg = Buffer.concat([pad('/channel/1/stage/layer/10/foreground/file/time'), pad(',ff'), Buffer.alloc(8)]);
+  msg.writeFloatBE(1.5, msg.length - 8);
+  msg.writeFloatBE(30, msg.length - 4);
+  const bundle = Buffer.concat([pad('#bundle'), Buffer.alloc(8), Buffer.alloc(4), msg]);
+  bundle.writeInt32BE(msg.length, 16);
+  const out = parsePacket(bundle);
+  assert.strictEqual(out[0].address, '/channel/1/stage/layer/10/foreground/file/time');
+  assert.deepStrictEqual(out[0].args, [1.5, 30]);
+});

@@ -7,7 +7,7 @@ const api = (() => {
   let ws = null;
   let nextId = 1;
   const waiting = new Map();
-  const listeners = { state: [], log: [], open: [], close: [] };
+  const listeners = { state: [], log: [], times: [], open: [], close: [] };
 
   function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
@@ -27,7 +27,8 @@ const api = (() => {
         if (msg.ok) w.resolve(msg.data);
         else w.reject(new Error(msg.error));
       } else if (listeners[msg.type]) {
-        listeners[msg.type].forEach((f) => f(msg.state ?? msg.line));
+        const payload = msg.type === 'state' ? msg.state : msg.type === 'times' ? msg.times : msg.line;
+        listeners[msg.type].forEach((f) => f(payload));
       }
     };
   }
@@ -52,7 +53,8 @@ const api = (() => {
 
 const isDesktop = typeof window.playoutDesktop !== 'undefined';
 let state = null;
-let selectedId = null;
+let times = { 1: null, 2: null };
+let selectedId = null; // izbira v načinu brez preview
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -70,13 +72,31 @@ function showError(msg) {
 
 async function run(action, args) {
   try {
-    const r = await api.call(action, args);
-    return r;
+    return await api.call(action, args);
   } catch (e) {
     showError(e.message);
     return undefined;
   }
 }
+
+const previewMode = () => !state || state.settings.previewMode !== false;
+
+// ---------- monitorji ----------
+
+function startMonitor(img, ch) {
+  // Ob prekinitvi (npr. ponovni zagon motorja) se slika samodejno znova poveže.
+  const connect = () => {
+    img.src = `/monitor/${ch}.mjpg?t=${Date.now()}`;
+  };
+  img.onerror = () => setTimeout(connect, 1500);
+  connect();
+  setInterval(() => {
+    // Če slika "zamrzne" (prekinjen tok), jo osvežimo.
+    if (img.dataset.stale === '1') connect();
+  }, 5000);
+}
+startMonitor($('#pvw-img'), 2);
+startMonitor($('#pgm-img'), 1);
 
 // ---------- prikaz ----------
 
@@ -105,14 +125,19 @@ const TYPE_LABEL = { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK' };
 function renderLibrary() {
   const ul = $('#library');
   ul.innerHTML = '';
-  const onAirId = state.program && state.program.id;
+  const pgmId = state.program && state.program.id;
+  const pvwId = state.preview && state.preview.id;
   $('#drop-hint').classList.toggle('hidden', state.library.length > 0);
+  $('#lib-hint').textContent = previewMode()
+    ? 'Klik = v preview · puščici gor/dol = prejšnji/naslednji v preview'
+    : 'Klik = neposredno na program';
 
   for (const it of state.library) {
     const li = document.createElement('li');
     li.dataset.id = it.id;
-    if (it.id === selectedId) li.classList.add('selected');
-    if (it.id === onAirId) li.classList.add('onair');
+    if (!previewMode() && it.id === selectedId) li.classList.add('selected');
+    if (it.id === pgmId) li.classList.add('onair');
+    if (previewMode() && it.id === pvwId) li.classList.add('inpvw');
     if (it.missing) li.classList.add('missing');
     li.title = it.missing ? `Datoteka ne obstaja: ${it.path}` : it.path;
 
@@ -123,14 +148,26 @@ function renderLibrary() {
     const name = document.createElement('span');
     name.className = 'name';
     name.textContent = it.name;
-
     li.append(type, name);
+
+    if (previewMode() && it.id === pvwId) {
+      const b = document.createElement('span');
+      b.className = 'badge pvw';
+      b.textContent = 'PVW';
+      li.append(b);
+    }
+    if (it.id === pgmId) {
+      const b = document.createElement('span');
+      b.className = 'badge pgm';
+      b.textContent = 'PGM';
+      li.append(b);
+    }
 
     if (it.type !== 'image') {
       const loop = document.createElement('button');
       loop.className = 'item-btn' + (it.loop ? ' active' : '');
       loop.textContent = 'LOOP';
-      loop.title = 'Ponavljaj v zanki';
+      loop.title = 'Ponavljaj v zanki (velja ob naslednjem nalaganju)';
       loop.onclick = (ev) => {
         ev.stopPropagation();
         run('library.loop', { id: it.id, loop: !it.loop });
@@ -144,64 +181,135 @@ function renderLibrary() {
     del.title = 'Odstrani s seznama (datoteka ostane na disku)';
     del.onclick = (ev) => {
       ev.stopPropagation();
-      if (it.id === onAirId) {
-        showError('Posnetek je na programu. Najprej počisti program.');
+      if (it.id === pgmId || it.id === pvwId) {
+        showError('Posnetek je na programu ali v preview. Najprej ga počisti.');
         return;
       }
       run('library.remove', { id: it.id });
     };
     li.append(del);
 
-    li.onclick = () => {
-      selectedId = it.id;
-      render();
-    };
-    li.ondblclick = () => {
-      selectedId = it.id;
-      take();
-    };
+    li.onclick = () => onItemClick(it.id);
     ul.append(li);
   }
-  $('#btn-take').disabled = !selectedId || !state.library.some((x) => x.id === selectedId);
 }
 
-function fmtTime(ms) {
-  const s = Math.max(0, Math.floor(ms / 1000));
+function fmtTime(sec) {
+  const s = Math.max(0, Math.floor(sec));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
   const pad = (n) => String(n).padStart(2, '0');
-  return (h ? `${h}:` : '') + `${pad(m)}:${pad(sec)}`;
+  return (h ? `${h}:` : '') + `${pad(m)}:${pad(s % 60)}`;
 }
 
-function renderProgram() {
-  const p = state.program;
-  $('.onair').classList.toggle('live', !!p);
-  $('#onair-name').textContent = p ? p.name : '—';
-  $('#onair-time').textContent = p ? `teče ${fmtTime(Date.now() - p.startedAt)}` : '';
+function timeText(item, t) {
+  if (!item) return ['', ''];
+  if (item.type === 'image') return ['slika', ''];
+  if (!t || !t.total) return ['', ''];
+  if (item.loop) return [`zanka · ${fmtTime(t.elapsed)} / ${fmtTime(t.total)}`, ''];
+  const left = t.total - t.elapsed;
+  const cls = left <= 0.5 ? 'time-end' : left <= 10 ? 'time-warn' : '';
+  return [`−${fmtTime(Math.ceil(left))}  (${fmtTime(t.total)})`, cls];
+}
+
+function renderMonitors() {
+  const pvw = state.preview;
+  const pgm = state.program;
+  $('.monitors').classList.toggle('nopvw', !previewMode());
+  $('#pvw-name').textContent = pvw ? pvw.name : '—';
+  $('#pgm-name').textContent = pgm ? pgm.name : '—';
+  $('#pvw-empty').classList.toggle('hidden', !!pvw);
+  $('#pgm-empty').classList.toggle('hidden', !!pgm);
+  $('#mon-pgm').classList.toggle('live', !!pgm);
+  renderTimes();
+
+  $('#btn-cut').classList.toggle('hidden', !previewMode());
+  $('#btn-auto').classList.toggle('hidden', !previewMode());
+  $('#direct-panel').classList.toggle('hidden', previewMode());
+  $('#btn-cut').disabled = !pvw;
+  $('#btn-auto').disabled = !pvw;
+  $('#auto-next').closest('label').classList.toggle('hidden', !previewMode());
+}
+
+function renderTimes() {
+  if (!state) return;
+  const [pt, pc] = timeText(state.program, times[1]);
+  const el = $('#pgm-time');
+  el.textContent = pt;
+  el.className = pc;
+  const [vt] = timeText(state.preview, times[2]);
+  $('#pvw-time').textContent = state.preview && state.preview.type !== 'image' && times[2] && times[2].total
+    ? `dolžina ${fmtTime(times[2].total)}`
+    : vt;
+}
+
+function fillTakeControls() {
+  const s = state.settings;
+  const typeSel = $('#tr-type');
+  if (!typeSel.options.length) {
+    for (const [k, v] of Object.entries(state.transitions)) typeSel.add(new Option(v, k));
+    for (const [k, v] of Object.entries(state.directions)) $('#tr-dir').add(new Option(v, k));
+  }
+  if (document.activeElement !== typeSel) typeSel.value = s.transitionType;
+  if (document.activeElement !== $('#tr-frames')) $('#tr-frames').value = s.transitionFrames;
+  if (document.activeElement !== $('#tr-dir')) $('#tr-dir').value = s.transitionDirection;
+  $('#tr-dir-wrap').classList.toggle('hidden', !['WIPE', 'SLIDE', 'PUSH'].includes(s.transitionType));
+  $('#auto-next').checked = !!s.autoNext;
+  $('#mode-preview').checked = previewMode();
+  for (const r of document.querySelectorAll('input[name=direct]')) r.checked = r.value === s.directTake;
 }
 
 function render() {
   if (!state) return;
   renderEngine();
   renderLibrary();
-  renderProgram();
+  renderMonitors();
+  fillTakeControls();
   if (state.lastError && state.lastError !== render.lastError) showError(state.lastError);
   render.lastError = state.lastError;
 }
 
-setInterval(() => state && renderProgram(), 500);
-
 // ---------- ukazi ----------
 
-async function take() {
-  if (!selectedId) return;
-  showError('');
-  await run('program.play', { id: selectedId });
+function onItemClick(id) {
+  if (previewMode()) {
+    run('preview.load', { id });
+  } else {
+    selectedId = id;
+    run('program.direct', { id });
+  }
 }
 
-$('#btn-take').onclick = take;
-$('#btn-clear').onclick = () => run('program.clear');
+function stepPreview(dir) {
+  const items = state ? state.library : [];
+  if (!items.length) return;
+  const cur = previewMode() ? state.preview && state.preview.id : selectedId;
+  let i = items.findIndex((x) => x.id === cur);
+  i = i === -1 ? (dir > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, i + dir));
+  if (previewMode()) {
+    run('preview.load', { id: items[i].id });
+  } else {
+    selectedId = items[i].id;
+    render();
+  }
+}
+
+const settingsPatch = (patch) => run('settings.update', patch);
+
+$('#btn-cut').onclick = () => run('take.cut');
+$('#btn-auto').onclick = () => run('take.auto');
+$('#btn-pvw-clear').onclick = () => run('preview.clear');
+$('#btn-pgm-clear').onclick = () => run('program.clear');
+$('#btn-pgm-fade').onclick = () => run('program.clear', { fade: true });
+$('#tr-type').onchange = (e) => settingsPatch({ transitionType: e.target.value });
+$('#tr-frames').onchange = (e) => settingsPatch({ transitionFrames: parseInt(e.target.value, 10) || 12 });
+$('#tr-dir').onchange = (e) => settingsPatch({ transitionDirection: e.target.value });
+$('#auto-next').onchange = (e) => settingsPatch({ autoNext: e.target.checked });
+$('#mode-preview').onchange = (e) => settingsPatch({ previewMode: e.target.checked });
+for (const r of document.querySelectorAll('input[name=direct]')) {
+  r.onchange = () => settingsPatch({ directTake: r.value });
+}
+
 $('#btn-add').onclick = () => {
   if (!isDesktop) {
     showError('Medije lahko dodajaš samo na računalniku.');
@@ -212,20 +320,22 @@ $('#btn-add').onclick = () => {
 
 document.addEventListener('keydown', (ev) => {
   if (document.querySelector('dialog[open]')) return;
+  const tag = (ev.target && ev.target.tagName) || '';
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
   if (ev.key === 'Enter') {
     ev.preventDefault();
-    take();
-  } else if (ev.key === 'Escape') {
+    if (previewMode()) run('take.cut');
+    else if (selectedId) run('program.direct', { id: selectedId, kind: 'cut' });
+  } else if (ev.key === ' ') {
     ev.preventDefault();
-    run('program.clear');
-  } else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    if (previewMode()) run('take.auto');
+    else if (selectedId) run('program.direct', { id: selectedId, kind: 'auto' });
+  } else if (ev.key === 'ArrowDown') {
     ev.preventDefault();
-    const items = state ? state.library : [];
-    if (!items.length) return;
-    let i = items.findIndex((x) => x.id === selectedId);
-    i = ev.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : Math.max(0, i - 1);
-    selectedId = items[i].id;
-    render();
+    stepPreview(1);
+  } else if (ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    stepPreview(-1);
   }
 });
 
@@ -354,7 +464,12 @@ $('#btn-engine-restart').onclick = () => {
 
 api.on('state', (s) => {
   state = s;
+  if (s.times) times = s.times;
   render();
+});
+api.on('times', (t) => {
+  times = t;
+  renderTimes();
 });
 api.on('log', (line) => {
   if ($('#dlg-log').open) appendLog(line);

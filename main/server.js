@@ -29,6 +29,17 @@ const MIME = {
 function createServer({ controller, uiDir, port, host = '127.0.0.1', extraActions = {} }) {
   const server = http.createServer((req, res) => {
     let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+    const mon = /^\/monitor\/(\d+)\.mjpg$/.exec(urlPath);
+    if (mon) {
+      const m = controller.monitors && controller.monitors[mon[1]];
+      if (!m) {
+        res.writeHead(404).end();
+        return;
+      }
+      const fps = Number(new URL(req.url, 'http://x').searchParams.get('fps')) || 0;
+      m.serve(req, res, fps);
+      return;
+    }
     if (urlPath === '/') urlPath = '/index.html';
     const file = path.normalize(path.join(uiDir, urlPath));
     if (!file.startsWith(path.normalize(uiDir))) {
@@ -62,7 +73,12 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'library.loop': (a) => controller.setLoop(a.id, a.loop),
     'library.move': (a) => controller.moveItem(a.id, a.index),
     'program.play': (a) => controller.play(a.id),
-    'program.clear': () => controller.clearProgram(),
+    'program.direct': (a) => controller.playDirect(a.id, a.kind),
+    'program.clear': (a) => controller.clearProgram(!!(a && a.fade)),
+    'preview.load': (a) => controller.loadPreview(a.id),
+    'preview.clear': () => controller.clearPreview(),
+    'take.cut': () => controller.take('cut'),
+    'take.auto': () => controller.take('auto'),
     ...extraActions,
   };
 
@@ -74,6 +90,7 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
   }
 
   controller.on('state', (state) => broadcast({ type: 'state', state }));
+  controller.on('times', (times) => broadcast({ type: 'times', times }));
   controller.engine.on('log', (line) => broadcast({ type: 'log', line }));
 
   wss.on('connection', (ws, req) => {

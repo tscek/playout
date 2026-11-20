@@ -121,6 +121,7 @@ class Engine extends EventEmitter {
   async restart(options) {
     if (options) this.options = options;
     this.safeMode = false;
+    this.quickCrashes = 0;
     await this._kill();
     if (this.wantRunning) await this._launch();
   }
@@ -154,6 +155,7 @@ class Engine extends EventEmitter {
       audioDelayFrames: o.audioDelayFrames || 0,
       paths,
       amcpPort: this.amcpPort,
+      oscPort: o.oscPort,
     });
     fs.mkdirSync(this.workDir, { recursive: true });
     fs.writeFileSync(this.configPath, cfg, 'utf8');
@@ -255,8 +257,9 @@ class Engine extends EventEmitter {
 
       this.restarts++;
       const ranFor = Date.now() - startedAt;
-      // Če motor pade takoj po zagonu, so verjetno krive nastavitve -> varni način.
-      if (ranFor < 15000 && !this.safeMode) {
+      // Če motor dvakrat zapored pade takoj po zagonu, so verjetno krive nastavitve -> varni način.
+      this.quickCrashes = ranFor < 15000 ? (this.quickCrashes || 0) + 1 : 0;
+      if (this.quickCrashes >= 2 && !this.safeMode) {
         this.safeMode = true;
         this._log('Motor se ni uspel zagnati z izbranimi nastavitvami, poskušam varni način (privzeti zvok).');
       }

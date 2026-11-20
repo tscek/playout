@@ -12,37 +12,64 @@
     <div id="engine-pill" class="pill pill-wait" title="Stanje motorja">Motor: povezujem …</div>
     <div id="conn-banner" class="conn-banner hidden">Povezava z aplikacijo prekinjena, ponovno povezujem …</div>
     <div class="spacer"></div>
+    <label class="switch" title="Brez preview: klik na posnetek ga pošlje neposredno na program">
+      <input type="checkbox" id="mode-preview">
+      <span>Preview</span>
+    </label>
     <button id="btn-log" class="btn ghost">Dnevnik</button>
     <button id="btn-settings" class="btn ghost">Nastavitve</button>
   </header>
 
   <main class="layout">
+    <section class="monitors">
+      <div class="monitor pvw" id="mon-pvw">
+        <div class="mon-head"><span class="mon-label">PREVIEW</span><span class="mon-name" id="pvw-name">—</span></div>
+        <div class="mon-screen"><img id="pvw-img" alt=""><div class="mon-empty" id="pvw-empty">prazno</div></div>
+        <div class="mon-foot"><span id="pvw-time"></span><button class="btn ghost small" id="btn-pvw-clear">Počisti</button></div>
+      </div>
+
+      <div class="take" id="take-panel">
+        <button id="btn-cut" class="btn take-btn cut" title="Takojšen preklop (Enter)">CUT<small>Enter</small></button>
+        <button id="btn-auto" class="btn take-btn auto" title="Preklop s prehodom (preslednica)">AUTO<small>Preslednica</small></button>
+        <label class="mini">Prehod
+          <select id="tr-type"></select>
+        </label>
+        <label class="mini">Trajanje (sličice)
+          <input type="number" id="tr-frames" min="1" max="250" step="1">
+        </label>
+        <label class="mini" id="tr-dir-wrap">Smer
+          <select id="tr-dir"></select>
+        </label>
+        <label class="mini check"><input type="checkbox" id="auto-next"> Po preklopu naloži naslednjega</label>
+        <div class="direct hidden" id="direct-panel">
+          <div class="mini">Klik na posnetek:</div>
+          <label class="mini check"><input type="radio" name="direct" value="cut"> takoj (CUT)</label>
+          <label class="mini check"><input type="radio" name="direct" value="auto"> s prehodom (AUTO)</label>
+        </div>
+      </div>
+
+      <div class="monitor pgm" id="mon-pgm">
+        <div class="mon-head"><span class="mon-label">PROGRAM</span><span class="mon-name" id="pgm-name">—</span></div>
+        <div class="mon-screen"><img id="pgm-img" alt=""><div class="mon-empty" id="pgm-empty">prazno</div></div>
+        <div class="mon-foot">
+          <span id="pgm-time"></span>
+          <span class="spacer"></span>
+          <button class="btn ghost small" id="btn-pgm-fade" title="Zatemni program s trajanjem prehoda">Zatemni</button>
+          <button class="btn danger small" id="btn-pgm-clear" title="Takoj počisti program">Počisti</button>
+        </div>
+      </div>
+    </section>
+
     <section class="panel library">
       <div class="panel-head">
         <h2>Mediji</h2>
+        <span class="hint-inline" id="lib-hint"></span>
         <div class="spacer"></div>
         <button id="btn-add" class="btn">+ Dodaj medije</button>
       </div>
       <div id="drop-hint" class="drop-hint">Povleci datoteke sem ali klikni "Dodaj medije".</div>
       <ul id="library" class="library-list"></ul>
-    </section>
-
-    <section class="panel program">
-      <div class="panel-head"><h2>Program</h2></div>
-      <div class="onair">
-        <div class="onair-label">NA PROGRAMU</div>
-        <div id="onair-name" class="onair-name">—</div>
-        <div id="onair-time" class="onair-time"></div>
-      </div>
-      <div class="actions">
-        <button id="btn-take" class="btn take" disabled>PREDVAJAJ IZBRANO<br><small>(Enter ali dvoklik)</small></button>
-        <button id="btn-clear" class="btn danger">POČISTI PROGRAM<br><small>(Esc)</small></button>
-      </div>
       <div id="error" class="error hidden"></div>
-      <div class="hint">
-        To je 1. korak: en sloj, izbrani posnetek gre neposredno na program.
-        Preview, prehodi in playlist pridejo v naslednjih korakih.
-      </div>
     </section>
   </main>
 
@@ -80,7 +107,7 @@
           zato zvok običajno malo prehiteva. Preveri s testnim posnetkom: bel kvadrat in pisk morata biti hkrati.</small>
       </label>
 
-      <p class="warn">Sprememba nastavitev na kratko ponovno zažene motor (izhod za trenutek ugasne).</p>
+      <p class="warn">Sprememba teh nastavitev na kratko ponovno zažene motor (izhod za trenutek ugasne).</p>
 
       <div class="dialog-actions">
         <button value="cancel" class="btn ghost">Prekliči</button>

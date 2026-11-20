@@ -7,6 +7,8 @@ const { app, BrowserWindow, dialog, ipcMain, session, shell, screen } = require(
 const { Engine } = require('./engine/engine');
 const { listDisplays } = require('./engine/displays');
 const { Controller } = require('./controller');
+const { ChannelMonitor } = require('./engine/monitor');
+const { OscListener } = require('./engine/osc');
 const { createServer } = require('./server');
 const { ALL_EXT } = require('./media');
 
@@ -112,6 +114,8 @@ app.whenReady().then(async () => {
     engine,
     dataDir,
     listDisplays: () => listDisplays(screen),
+    monitors: { 1: new ChannelMonitor(1), 2: new ChannelMonitor(2) },
+    osc: new OscListener(0),
     templateDir: path.join(engineDir, 'templates'),
   });
 
