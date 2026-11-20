@@ -27,7 +27,6 @@ function makeItem(file) {
     name: path.basename(file),
     type,
     loop: false,
-    volumeDb: 0, // jakost posnetka v dB (-40 = utišano)
   };
 }
 

@@ -82,6 +82,7 @@ class Controller extends EventEmitter {
     this.displays = [];
     this.audioDevices = [];
     this.playlist = new Playlist(readJson(this.playlistFile, null));
+    this._migrateLook();
     // src = { groupId, entryId }, če je posnetek prišel iz playliste
     this.program = { item: null, startedAt: 0, src: null }; // kaj je na programu
     this.preview = { item: null, src: null, seek: 0 }; // kaj je v preview
@@ -320,40 +321,64 @@ class Controller extends EventEmitter {
     }
   }
 
-  /** Prileganje medija: fit ('fit' | 'fill' | 'stretch'), zoom (1 = 100 %), posX/posY (% slike). */
-  async setTransform(id, patch) {
-    const it = this._item(id);
-    const p = patch || {};
-    if ('fit' in p) it.fit = ['fit', 'fill', 'stretch'].includes(p.fit) ? p.fit : 'fit';
-    if ('zoom' in p) it.zoom = Math.max(0.1, Math.min(5, Number(p.zoom) || 1));
-    if ('posX' in p) it.posX = Math.max(-100, Math.min(100, Number(p.posX) || 0));
-    if ('posY' in p) it.posY = Math.max(-100, Math.min(100, Number(p.posY) || 0));
-    if (p.reset) {
-      it.fit = 'fit';
-      it.zoom = 1;
-      it.posX = 0;
-      it.posY = 0;
+  /**
+   * Nastavitve vnosa v preview ali programu (which): jakost, mute, prileganje.
+   * patch: { volumeDb, muted, fit, zoom, posX, posY, reset }. Shranijo se k vnosu v playlisti.
+   */
+  async setLook(which, patch) {
+    const slot = which === 'program' ? this.program : this.preview;
+    if (!slot.item) this._error(which === 'program' ? 'Program je prazen' : 'Preview je prazen');
+    if (!slot.src || !this.playlist.findEntry(slot.src.entryId)) this._error('Nastavitve ima samo vnos v playlisti. Dodaj posnetek v playlisto.');
+    const p = { ...(patch || {}) };
+    const entryId = slot.src.entryId;
+    this.playlist.setEntry(entryId, p);
+    this._savePlaylist();
+    const lib = this._item(slot.item.id);
+    if (!lib.width && lib.type !== 'audio' && ('fit' in p || 'zoom' in p || 'posX' in p || 'posY' in p || p.reset)) this._probe(lib);
+    for (const s of [this.preview, this.program]) {
+      if (s.item && s.src && s.src.entryId === entryId) s.item = this._slotItem(lib, s.src);
     }
-    if (!it.width && it.type !== 'audio') this._probe(it);
-    for (const slot of [this.preview, this.program]) {
-      if (slot.item && slot.item.id === id) Object.assign(slot.item, { fit: it.fit, zoom: it.zoom, posX: it.posX, posY: it.posY, width: it.width, height: it.height });
+    if (this.engine.status !== 'running') return;
+    if (('volumeDb' in p || 'muted' in p) && this.program.src && this.program.src.entryId === entryId) {
+      await this._applyItemVolume(this.program.item, 0);
     }
-    this._saveLibrary();
-    // Preview se pripravi znova (program dobi spremembo ob naslednjem predvajanju).
-    if (this.preview.item && this.preview.item.id === id && this.engine.status === 'running') {
+    // Postavitev: preview se pripravi znova (program dobi spremembo ob naslednjem predvajanju).
+    const look = 'fit' in p || 'zoom' in p || 'posX' in p || 'posY' in p || p.reset;
+    if (look && this.preview.src && this.preview.src.entryId === entryId) {
       this.preview.seek = this._previewPosFrames();
       await this._cue();
     }
   }
 
-  /** Mute posnetka (shrani se k posnetku). */
-  async setItemMuted(id, muted) {
-    const it = this._item(id);
-    it.muted = !!muted;
-    for (const slot of [this.program, this.preview]) if (slot.item && slot.item.id === id) slot.item.muted = it.muted;
-    this._saveLibrary();
-    if (this.program.item && this.program.item.id === id && this.engine.status === 'running') {
-      await this._applyItemVolume(this.program.item, 0);
+  /** Posnetek, kot ga predvajamo: datoteka iz knjižnice + nastavitve vnosa (jakost, mute, prileganje). */
+  _slotItem(item, src) {
+    const f = src ? this.playlist.findEntry(src.entryId) : null;
+    const e = f ? f.entry : {};
+    const out = { ...item, volumeDb: e.volumeDb || 0, muted: !!e.muted, zoom: e.zoom || 1, posX: e.posX || 0, posY: e.posY || 0 };
+    delete out.fit;
+    if (e.fit) out.fit = e.fit;
+    delete out.inSec;
+    delete out.outSec;
+    return out;
+  }
+
+  /** v0.7.0: nastavitve, ki so bile shranjene k mediju, gredo k vsem njegovim vnosom v playlisti. */
+  _migrateLook() {
+    let moved = false;
+    for (const it of this.library.items) {
+      const look = {};
+      for (const k of ['volumeDb', 'muted', 'fit', 'zoom', 'posX', 'posY', 'inSec', 'outSec']) {
+        if (!(k in it)) continue;
+        if (!['inSec', 'outSec'].includes(k) && it[k] !== null) look[k] = it[k];
+        delete it[k];
+        moved = true;
+      }
+      if (!Object.keys(look).length) continue;
+      for (const g of this.playlist.groups) for (const e of g.items) if (e.mediaId === it.id) this.playlist.setEntry(e.id, { ...look });
+    }
+    if (moved) {
+      writeJson(this.libraryFile, this.library);
+      writeJson(this.playlistFile, this.playlist.toJSON());
     }
   }
 
@@ -446,6 +471,9 @@ class Controller extends EventEmitter {
   async setEntry(entryId, patch) {
     if (!this.playlist.setEntry(entryId, patch || {})) this._error('Vnos ne obstaja');
     this._savePlaylist();
+    for (const sl of [this.preview, this.program]) {
+      if (sl.item && sl.src && sl.src.entryId === entryId) sl.item = this._slotItem(this._item(sl.item.id), sl.src);
+    }
     await this._refreshPreviewSpec(entryId);
     await this._rearm();
   }
@@ -475,15 +503,9 @@ class Controller extends EventEmitter {
     const spec = this._spec(v.item, v.src);
     if (!clear && key === 'outSec' && spec.inSec && value <= spec.inSec) this._error('OUT mora biti za IN točko');
     if (!clear && key === 'inSec' && spec.outSec && value >= spec.outSec) this._error('IN mora biti pred OUT točko');
-    if (v.src) {
-      this.playlist.setEntry(v.src.entryId, { [key]: value });
-      writeJson(this.playlistFile, this.playlist.toJSON());
-    } else {
-      const it = this._item(v.item.id);
-      it[key] = value;
-      v.item[key] = value;
-      writeJson(this.libraryFile, this.library);
-    }
+    if (!v.src || !this.playlist.findEntry(v.src.entryId)) this._error('IN in OUT ima samo vnos v playlisti. Dodaj posnetek v playlisto.');
+    this.playlist.setEntry(v.src.entryId, { [key]: value });
+    writeJson(this.playlistFile, this.playlist.toJSON());
     // Playhead ostane, kjer je.
     v.seek = Math.round(pos * fpsOf(this.settings.videoMode));
     this._changed();
@@ -527,8 +549,8 @@ class Controller extends EventEmitter {
     const g = f ? f.group : null;
     const end = (e && e.end) || (g ? g.end : 'stop');
     const fps = fpsOf(this.settings.videoMode);
-    const inSec = e ? e.inSec : item.inSec;
-    const outSec = e ? e.outSec : item.outSec;
+    const inSec = e ? e.inSec : null;
+    const outSec = e ? e.outSec : null;
     return {
       end,
       explicit: !!(e && e.end),
@@ -759,10 +781,10 @@ class Controller extends EventEmitter {
 
   /** Naloži posnetek v PREVIEW. entryId = vnos v playlisti (če je posnetek iz playliste). */
   async loadPreview(id, entryId = null) {
-    const item = this._item(id);
-    this._checkFile(item);
     const src = this._srcOf(entryId);
-    this.preview = { item: { ...item }, src, seek: this._spec(item, src).inF };
+    const item = this._slotItem(this._item(id), src);
+    this._checkFile(item);
+    this.preview = { item, src, seek: this._spec(item, src).inF };
     this.lastError = '';
     this._changed();
     if (this.engine.status !== 'running') return;
@@ -840,12 +862,12 @@ class Controller extends EventEmitter {
 
   /** Način brez preview: posnetek gre neposredno na program. */
   async playDirect(id, kind, entryId = null) {
-    const item = this._item(id);
+    const src = this._srcOf(entryId);
+    const item = this._slotItem(this._item(id), src);
     this._checkFile(item);
     this._requireEngine();
     const k = kind || this.settings.directTake;
     this._clearImageTimer();
-    const src = this._srcOf(entryId);
     const inF = this._spec(item, src).inF;
     try {
       await this.engine.send(this._playCommand(item, inF, k === 'auto' ? this.transitionPart() : '', src));
@@ -967,17 +989,6 @@ class Controller extends EventEmitter {
   async _applyMaster() {
     const g = this.settings.masterMuted ? 0 : dbToGain(this.settings.masterVolumeDb);
     await this.engine.send(`MIXER ${PROGRAM_CHANNEL} MASTERVOLUME ${g.toFixed(4)}`);
-  }
-
-  /** Jakost posnetka (shrani se k posnetku). Če je na programu, se spremeni takoj. */
-  async setItemVolume(id, db) {
-    const it = this._item(id);
-    it.volumeDb = clampDb(db, 0);
-    for (const slot of [this.program, this.preview]) if (slot.item && slot.item.id === id) slot.item.volumeDb = it.volumeDb;
-    this._saveLibrary();
-    if (this.program.item && this.program.item.id === id && this.engine.status === 'running') {
-      await this._applyItemVolume(this.program.item, 0);
-    }
   }
 
   /** Trenutni položaj preview v sličicah kanala (iz OSC ali zadnjega premika). */

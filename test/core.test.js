@@ -312,7 +312,7 @@ test('zvok, premik po posnetku in samodejno naprej s CUT', async () => {
     await ctl.addToGroup(g.id, [ia.id, ib.id]);
     await ctl.setGroup(g.id, { end: 'cut' });
 
-    await ctl.setItemVolume(ia.id, -6);
+    await ctl.setEntry(ctl.playlist.group(g.id).items[0].id, { volumeDb: -6 });
     await ctl.cueGroup(g.id);
     sent.length = 0;
     await ctl.seek('preview', 4); // začetna točka 4 s = 200 sličic pri 50p
@@ -328,7 +328,7 @@ test('zvok, premik po posnetku in samodejno naprej s CUT', async () => {
     sent.length = 0;
     await ctl.seek('program', 10);
     assert.strictEqual(sent[0], 'CALL 1-10 SEEK 500');
-    await ctl.setItemVolume(ia.id, 0);
+    await ctl.setLook('program', { volumeDb: 0 });
     assert.strictEqual(sent[1], 'MIXER 1-10 VOLUME 1.0000');
     await ctl.updateSettings({ masterVolumeDb: -40 });
     assert.strictEqual(sent[2], 'MIXER 1 MASTERVOLUME 0.0000');
@@ -373,19 +373,35 @@ test('vnos: lastna nastavitev konca, IN/OUT točki, trajanje slike', async () =>
     await waitFor(() => ctl.program.src.entryId === e3.id, 3000);
     assert.match(sent[0], /^PLAY 1-10 ".*a\.mp4" MIX 12 LINEAR$/);
 
-    // IN/OUT iz preview za medij brez playliste
+    // Medij brez playliste: brez nastavitev
     await ctl.loadPreview(ia.id);
+    ctl.times[2] = { elapsed: 1.5, total: 10 };
+    await assert.rejects(() => ctl.markPreview('in'), /playlist/);
+    await assert.rejects(() => ctl.setLook('preview', { volumeDb: -3 }), /playlist/);
+
+    // Ista datoteka v drugem vnosu (e3) ima svoje IN/OUT, jakost in postavitev
+    await ctl.loadPreview(ia.id, e3.id);
     ctl.times[2] = { elapsed: 1.5, total: 10 };
     await ctl.markPreview('in');
     ctl.times[2] = { elapsed: 6, total: 10 };
     sent.length = 0;
     await ctl.markPreview('out');
-    assert.strictEqual(ia.inSec, 1.5);
-    assert.strictEqual(ia.outSec, 6);
+    assert.strictEqual(e3.inSec, 1.5);
+    assert.strictEqual(e3.outSec, 6);
+    assert.strictEqual(e1.inSec, 2);
+    assert.strictEqual(ia.inSec, undefined);
     assert.ok(sent.some((x) => /^LOAD 2-10 ".*a\.mp4" SEEK 75 IN 75 OUT 300$/.test(x)), sent.join('\n'));
     await assert.rejects(() => { ctl.times[2] = { elapsed: 1, total: 10 }; return ctl.markPreview('out'); });
     await ctl.markPreview('out', true);
-    assert.strictEqual(ia.outSec, null);
+    assert.strictEqual(e3.outSec, null);
+    await ctl.setLook('preview', { muted: true, zoom: 1.5 });
+    assert.strictEqual(e3.muted, true);
+    assert.strictEqual(e3.zoom, 1.5);
+    assert.strictEqual(e1.muted, false);
+    assert.strictEqual(ctl.getState().preview.zoom, 1.5);
+    await ctl.loadPreview(ia.id, e1.id);
+    assert.strictEqual(ctl.getState().preview.zoom, 1);
+    assert.strictEqual(ctl.getState().preview.muted, false);
   } finally {
     await engine.stop();
   }
@@ -501,4 +517,34 @@ test('prileganje: filter za razmerje, povečavo in premik; velikost iz glave dat
   assert.strictEqual(f({ width: 640, height: 480, fit: 'fill' }), 'scale=1920:1440,crop=1920:1080:0:180,pad=1920:1080:0:0:color=black@0,setsar=1');
   assert.strictEqual(f({ width: 1920, height: 1080, zoom: 0.5, posX: 25 }), 'scale=960:540,pad=1920:1080:960:270:color=black@0,setsar=1');
   assert.match(f({ width: 1920, height: 1080, zoom: 2 }), /^scale=3840:2160,crop=1920:1080:960:540,pad=1920:1080:0:0/);
+});
+
+test('v0.7.0: nastavitve medija gredo k vnosom v playlisti', () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'library.json'), JSON.stringify({ items: [
+    { id: 'm1', name: 'a', path: path.join(dir, 'a.mp4'), type: 'video', volumeDb: -6, muted: true, fit: 'fill', zoom: 1.2, posX: 10, inSec: 3 },
+    { id: 'm2', name: 'b', path: path.join(dir, 'b.mp4'), type: 'video' },
+  ] }));
+  fs.writeFileSync(path.join(dir, 'playlist.json'), JSON.stringify({ groups: [{ id: 'g', name: 'G', items: [
+    { id: 'e1', mediaId: 'm1' }, { id: 'e2', mediaId: 'm1', inSec: 1 }, { id: 'e3', mediaId: 'm2' },
+  ] }] }));
+  const engine = new Engine({ casparDir: MOCK_DIR, workDir: path.join(dir, 'engine'), amcpPort: portBase++ });
+  const ctl = new Controller({ engine, dataDir: dir, listDisplays: async () => [] });
+  const [e1, e2, e3] = ctl.playlist.groups[0].items;
+  for (const e of [e1, e2]) {
+    assert.strictEqual(e.volumeDb, -6);
+    assert.strictEqual(e.muted, true);
+    assert.strictEqual(e.fit, 'fill');
+    assert.strictEqual(e.zoom, 1.2);
+    assert.strictEqual(e.posX, 10);
+  }
+  assert.strictEqual(e1.inSec, null); // IN medija ni veljal za vnose
+  assert.strictEqual(e2.inSec, 1);
+  assert.strictEqual(e3.volumeDb, 0);
+  assert.strictEqual(e3.fit, null);
+  const lib = JSON.parse(fs.readFileSync(path.join(dir, 'library.json'), 'utf8'));
+  assert.strictEqual(lib.items[0].volumeDb, undefined);
+  assert.strictEqual(lib.items[0].inSec, undefined);
+  const pl = JSON.parse(fs.readFileSync(path.join(dir, 'playlist.json'), 'utf8'));
+  assert.strictEqual(pl.groups[0].items[1].muted, true);
 });

@@ -378,6 +378,9 @@ function renderPlaylist() {
       if (e.id === pgmEntry) li.append(el('span', 'badge pgm', 'PGM'));
       if (e.inSec || e.outSec) li.append(el('span', 'badge info', `${e.inSec ? fmtTime(e.inSec) : '0:00'}–${e.outSec ? fmtTime(e.outSec) : 'konec'}`));
       if (e.type === 'image' && e.seconds) li.append(el('span', 'badge info', `${e.seconds} s`));
+      if (e.muted) li.append(el('span', 'badge info', '🔇'));
+      else if (e.volumeDb && e.type !== 'image') li.append(el('span', 'badge info', fmtDb(e.volumeDb)));
+      if (e.type !== 'audio' && (e.fit && e.fit !== 'fit' || e.zoom !== 1 || e.posX || e.posY)) li.append(el('span', 'badge info', '▣'));
       if (e.end) li.append(el('span', 'badge info end', END_ICON[e.end]));
       const gear = el('button', 'item-btn' + (openEntryId === e.id ? ' active' : ''), '⚙');
       gear.title = 'Nastavitve vnosa: kaj na koncu, trajanje slike, IN/OUT';
@@ -576,6 +579,9 @@ const fmtDb = (db) => (db <= -40 ? 'utišano' : `${db > 0 ? '+' : ''}${Number(db
 /** Drsnik po posnetku in jakost pod monitorjem. */
 function renderMonCtl(prefix, item, t) {
   const scrub = $(`#${prefix}-scrub`);
+  // Nastavitve (IN/OUT, jakost, mute, prileganje) ima samo vnos v playlisti.
+  const editable = !!(item && item.src);
+  const lockNote = 'Posnetek iz Medijev: za nastavitve ga dodaj v playlisto';
   const canSeek = !!(item && item.type !== 'image' && t && t.total);
   scrub.disabled = !canSeek;
   if (canSeek && !scrub.dragging) scrub.value = Math.round((t.elapsed / t.total) * 1000);
@@ -592,22 +598,23 @@ function renderMonCtl(prefix, item, t) {
   if (prefix === 'pvw') {
     for (const k of ['in', 'out']) {
       const b = $(`#btn-mark-${k}`);
-      b.disabled = !canSeek;
+      b.disabled = !canSeek || !editable;
       const v = item && item[`${k}Sec`];
       b.classList.toggle('active', !!v);
-      b.title = (k === 'in' ? 'IN: začetek posnetka na trenutnem mestu' : 'OUT: konec posnetka na trenutnem mestu')
+      b.title = item && !editable ? lockNote : (k === 'in' ? 'IN: začetek posnetka na trenutnem mestu' : 'OUT: konec posnetka na trenutnem mestu')
         + (v ? ` (zdaj ${fmtTime(v)}; desni klik pobriše)` : '');
     }
   }
   const vol = $(`#${prefix}-vol`);
-  vol.disabled = !item || item.type === 'image';
+  vol.disabled = !item || item.type === 'image' || !editable;
+  vol.title = item && !editable ? lockNote : 'Jakost tega vnosa';
   if (!vol.dragging) vol.value = item ? item.volumeDb || 0 : 0;
   $(`#${prefix}-vol-val`).textContent = item && item.type !== 'image' ? fmtDb(Number(vol.value)) : '';
   const mute = $(`#${prefix}-mute`);
-  mute.disabled = !item || item.type === 'image';
+  mute.disabled = !item || item.type === 'image' || !editable;
   mute.classList.toggle('muted', !!(item && item.muted));
   mute.textContent = item && item.muted ? '🔇' : '🔊';
-  mute.title = item && item.muted ? 'Posnetek je utišan: klikni za vklop zvoka' : 'Utišaj ta posnetek';
+  mute.title = item && !editable ? lockNote : item && item.muted ? 'Vnos je utišan: klikni za vklop zvoka' : 'Utišaj ta vnos';
   // Predvajaj / ustavi in koraki
   const isVideo = !!(item && item.type !== 'image');
   const which = prefix === 'pgm' ? 'program' : 'preview';
@@ -624,8 +631,9 @@ function renderMonCtl(prefix, item, t) {
 /** Plošča za prileganje slike v preview. */
 function renderFitPanel(item) {
   const btn = $('#btn-fit');
-  const ok = !!(item && item.type !== 'audio');
+  const ok = !!(item && item.type !== 'audio' && item.src);
   btn.disabled = !ok;
+  btn.title = item && !item.src ? 'Posnetek iz Medijev: za nastavitve ga dodaj v playlisto' : 'Prileganje slike';
   const changed = ok && (item.fit && item.fit !== 'fit' || item.zoom !== 1 || item.posX || item.posY);
   btn.classList.toggle('on', !!changed);
   const panel = $('#fit-panel');
@@ -786,7 +794,7 @@ for (const [prefix, which, ch] of [['pvw', 'preview', 2], ['pgm', 'program', 1]]
   const vol = $(`#${prefix}-vol`);
   liveSlider(vol, (db) => {
     const item = state && state[which];
-    if (item) run('media.volume', { id: item.id, db });
+    if (item) run('media.volume', { which, db });
   }, () => { $(`#${prefix}-vol-val`).textContent = fmtDb(Number(vol.value)); });
 }
 liveSlider($('#fit-zoom'), (v) => fitPatch({ zoom: v / 100 }), () => { $('#fit-zoom-val').textContent = `${$('#fit-zoom').value} %`; });
@@ -813,7 +821,7 @@ $('#program-play').onclick = () => run('playPause', { which: 'program' });
 for (const [prefix, which] of [['pvw', 'preview'], ['pgm', 'program']]) {
   $(`#${prefix}-mute`).onclick = () => {
     const item = state && state[which];
-    if (item) run('media.mute', { id: item.id, muted: !item.muted });
+    if (item) run('media.mute', { which, muted: !item.muted });
   };
 }
 $('#master-mute').onclick = () => settingsPatch({ masterMuted: !(state && state.settings.masterMuted) });
@@ -825,7 +833,7 @@ $('#btn-fit').onclick = () => {
 };
 const fitPatch = (patch) => {
   const item = state && state.preview;
-  if (item) run('media.transform', { id: item.id, patch });
+  if (item) run('media.transform', { which: 'preview', patch });
 };
 $('#fit-mode').onchange = (e) => fitPatch({ fit: e.target.value });
 $('#fit-reset').onclick = () => fitPatch({ reset: true });

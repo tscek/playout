@@ -32,6 +32,25 @@ function normEntry(e) {
     startAction: typeof e.startAction === 'string' && e.startAction ? e.startAction : null, // akcija ob začetku
     endAction: typeof e.endAction === 'string' && e.endAction ? e.endAction : null, // akcija ob koncu
     endLead: Math.max(0, Math.min(30, optSeconds(e.endLead) || 0)), // koliko sekund pred koncem
+    ...normLook(e),
+  };
+}
+
+const FITS = ['fit', 'fill', 'stretch'];
+const clamp = (v, lo, hi, def) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def;
+};
+
+/** Jakost, mute in postavitev slike vnosa (vsak vnos ima svoje). */
+function normLook(e) {
+  return {
+    volumeDb: clamp(e.volumeDb, -40, 10, 0),
+    muted: !!e.muted,
+    fit: FITS.includes(e.fit) ? e.fit : null, // null = privzeto (ohrani razmerje)
+    zoom: clamp(e.zoom, 0.1, 5, 1),
+    posX: clamp(e.posX, -100, 100, 0),
+    posY: clamp(e.posY, -100, 100, 0),
   };
 }
 
@@ -132,6 +151,10 @@ class Playlist {
     if ('startAction' in patch) e.startAction = typeof patch.startAction === 'string' && patch.startAction ? patch.startAction : null;
     if ('endAction' in patch) e.endAction = typeof patch.endAction === 'string' && patch.endAction ? patch.endAction : null;
     if ('endLead' in patch) e.endLead = Math.max(0, Math.min(30, optSeconds(patch.endLead) || 0));
+    if (patch.reset) Object.assign(patch, { fit: null, zoom: 1, posX: 0, posY: 0 });
+    for (const k of ['volumeDb', 'muted', 'fit', 'zoom', 'posX', 'posY']) {
+      if (k in patch) e[k] = normLook({ ...e, [k]: k === 'volumeDb' ? Math.round(Number(patch[k]) * 2) / 2 : patch[k] })[k];
+    }
     if (e.inSec !== null && e.outSec !== null && e.outSec <= e.inSec) e.outSec = null;
     return e;
   }

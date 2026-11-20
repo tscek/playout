@@ -1,6 +1,20 @@
-# Test v0.6.0: predvajanje, prileganje slike, mute
+# Test v0.7.0: nastavitve pripadajo vnosu v playlisti
 
 Namesti novo verzijo čez staro. Nastavitve in seznam medijev ostanejo.
+
+## Novo v 0.7.0
+
+1. **Mediji** so samo seznam datotek. Posnetek, naložen iz Medijev, vidiš s privzetimi nastavitvami.
+   IN, OUT, ▣ Slika, jakost in 🔊 so takrat zaklenjeni (namig: dodaj v playlisto).
+2. **Vnos v playlisti** ima svoje nastavitve: IN/OUT, jakost, mute, prileganje, povečavo in premik.
+   Isto datoteko lahko dodaš dvakrat (ali v dve skupini) in vsak vnos ima svoje nastavitve.
+3. Pri vnosu so oznake: 🔇 utišan, jakost v dB, ▣ spremenjena postavitev.
+4. Nastavitve, ki si jih prej shranil k mediju (jakost, mute, prileganje), so prenesene na vse vnose tega medija.
+   IN/OUT, nastavljen samo pri mediju (brez playliste), se ne prenese.
+
+Preveri: dodaj isti posnetek dvakrat, enemu nastavi drugačen IN/OUT, jakost in povečavo, in ali se drugi ne spremeni.
+
+# v0.6.0: predvajanje, prileganje slike, mute
 
 ## Novo v 0.6.0
 
@@ -10,10 +24,10 @@ Namesti novo verzijo čez staro. Nastavitve in seznam medijev ostanejo.
    Tipki **,** in **.** premikata preview po sličici, s Shift po sekundo.
 3. **IN/OUT**: playhead po označitvi ostane, kjer je. Pri vnosu (⚙) lahko točko še popraviš za sličico ali sekundo.
 4. **Slike s trajanjem** imajo na programu odštevanje kot video (oranžno zadnjih 10 s).
-5. **Zvočnik**: klik na 🔊 pri preview/programu utiša posnetek (shrani se k posnetku), klik na 🔊 pri Glavni jakosti utiša cel izhod.
+5. **Zvočnik**: klik na 🔊 pri preview/programu utiša vnos (shrani se k vnosu), klik na 🔊 pri Glavni jakosti utiša cel izhod.
 6. **Prileganje**: video ali slika, ki ni 16:9, se ne raztegne več, ampak ohrani razmerje (črni robovi).
    Gumb **▣ Slika** pod preview: *Ohrani razmerje*, *Zapolni* (obreže robove) ali *Raztegni*, povečava in premik levo/desno, gor/dol.
-   Nastavitev se shrani k mediju. Vidiš jo v preview, na programu velja ob naslednjem predvajanju.
+   Nastavitev se shrani k vnosu v playlisti. Vidiš jo v preview, na programu velja ob naslednjem predvajanju.
    Preveri, ali je računalnik pri tem bolj obremenjen (pri videih, ki niso 16:9 ali so povečani, sliko preračuna ffmpeg).
 
 ## 0. Akcije (novo v 0.5.0)
@@ -65,7 +79,7 @@ Preveri na XR18: ali se kanali in skupine utišajo in ali fader pride na pravo v
 ## IN in OUT točka
 
 1. Posnetek naloži v preview, zapelji drsnik pod preview in klikni **IN** ali **OUT**.
-2. Točki se shranita k vnosu v playlisti (ali k mediju, če si ga naložil iz Medijev). Na drsniku je oranžna črta.
+2. Točki se shranita k vnosu v playlisti. Na drsniku je oranžna črta.
 3. Desni klik na IN ali OUT točko pobriše (ali ✕ pod ⚙ pri vnosu).
 4. Posnetek se potem začne na IN in konča na OUT. Preostali čas in samodejno naprej se računata do OUT.
    Pri *ponavljaj posnetek* se ponavlja samo del med IN in OUT.
@@ -77,7 +91,7 @@ Preveri na XR18: ali se kanali in skupine utišajo in ali fader pride na pravo v
 
 ## D. Zvok
 
-1. Pod vsakim monitorjem je 🔊 drsnik za jakost tega posnetka. Shrani se k posnetku in velja vsakič.
+1. Pod vsakim monitorjem je 🔊 drsnik za jakost tega vnosa. Shrani se k vnosu v playlisti.
    Na programu se spremeni takoj, pri AUTO se jakost lepo prelije.
 2. Na sredini je **Glavna jakost** za cel program. Skrajno levo pomeni utišano.
 
