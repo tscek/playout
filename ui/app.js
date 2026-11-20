@@ -726,10 +726,15 @@ function renderMonitors() {
   $('#pgm-name').textContent = pgm ? pgm.name : '—';
   for (const [id, it] of [['#pvw-name', pvw], ['#pgm-name', pgm]]) {
     const n = it && it.layers ? it.layers.filter((l) => !l.hidden).length : 0;
-    if (n) $(id).append(el('span', 'mon-layers', `▤ ${n} ${n === 1 ? 'plast' : n === 2 ? 'plasti' : n < 5 ? 'plasti' : 'plasti'}`));
+    if (n) $(id).append(el('span', 'mon-layers', `▤ ${n} ${n === 1 ? 'plast' : 'plasti'}`));
   }
-  $('#pvw-empty').classList.toggle('hidden', !!pvw);
-  $('#pgm-empty').classList.toggle('hidden', !!pgm);
+  // Napisi: v preview (en) in na programu (koliko)
+  const T = state.titles || { items: [], onAir: [] };
+  const tp = T.pvw && T.items.find((t) => t.id === T.pvw);
+  if (tp) $('#pvw-name').append(el('span', 'mon-titles', `Aa ${tp.label}`));
+  if (T.onAir.length) $('#pgm-name').append(el('span', 'mon-titles', `Aa ${T.onAir.length} ${T.onAir.length === 1 ? 'napis' : T.onAir.length === 2 ? 'napisa' : T.onAir.length < 5 ? 'napisi' : 'napisov'}`));
+  $('#pvw-empty').classList.toggle('hidden', !!pvw || !!tp);
+  $('#pgm-empty').classList.toggle('hidden', !!pgm || T.onAir.length > 0);
   $('#mon-pgm').classList.toggle('live', !!pgm);
   renderTimes();
 
@@ -1080,6 +1085,7 @@ function render() {
   fillTakeControls();
   renderTakeKeys();
   if (typeof renderActions === 'function') renderActions();
+  if (typeof renderTitles === 'function') renderTitles();
   renderEntryDialog();
   if (state.lastError && state.lastError !== render.lastError) showError(state.lastError);
   render.lastError = state.lastError;
@@ -1397,6 +1403,7 @@ const HOTKEY_LABEL = {
   stepBackFrame: 'Preview: sličica nazaj', stepFwdFrame: 'Preview: sličica naprej',
   stepBackSec: 'Preview: sekunda nazaj', stepFwdSec: 'Preview: sekunda naprej',
   panic: 'PANIKA (vklop/izklop)', pause: 'Program: predvajaj/ustavi', fadeclear: 'Program: zatemni',
+  titlesOff: 'Napisi: vsi dol',
 };
 
 function runHotkey(cmd) {
@@ -1411,6 +1418,8 @@ function runHotkey(cmd) {
   else if (cmd === 'fadeclear') run('program.clear', { fade: true });
   else if (cmd.startsWith('action:')) run('actions.run', { id: cmd.slice(7) });
   else if (cmd.startsWith('group:')) run('playlist.cueGroup', { groupId: cmd.slice(6) });
+  else if (cmd.startsWith('title:')) run('titles.toggle', { id: cmd.slice(6) });
+  else if (cmd === 'titlesOff') run('titles.allOff');
 }
 
 let libSearch = '';
@@ -1520,6 +1529,7 @@ function renderHotkeys() {
   const rows = Object.keys(HOTKEY_LABEL).map((k) => [k, HOTKEY_LABEL[k]]);
   for (const a of (state.actions && state.actions.actions) || []) rows.push([`action:${a.id}`, `Akcija: ${a.name}`]);
   for (const g of state.playlist) rows.push([`group:${g.id}`, `Skupina v preview: ${g.name}`]);
+  for (const t of (state.titles && state.titles.items) || []) rows.push([`title:${t.id}`, `Napis vklop/izklop: ${t.label}`]);
   box.innerHTML = '';
   for (const [cmd, label] of rows) {
     const row = el('div', 'hk-row');

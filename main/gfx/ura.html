@@ -1,0 +1,96 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ura in odštevanje</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); }
+.empty { display: none !important; }
+#box { position: absolute; display: flex; flex-direction: column; align-items: stretch; color: var(--text); opacity: 0; transform: translateY(16px);
+  transition: opacity .45s ease, transform .5s cubic-bezier(.2,.8,.2,1); }
+#box.tr { top: 60px; right: 80px; } #box.tl { top: 60px; left: 80px; }
+#box.br { bottom: 60px; right: 80px; } #box.bl { bottom: 60px; left: 80px; }
+#box.center { left: 50%; top: 50%; transform: translate(-50%, calc(-50% + 16px)); }
+#label { background: var(--accent); color: var(--bg); font-size: 30px; font-weight: 700; padding: 6px 22px; text-align: center; white-space: nowrap; }
+#time { background: var(--bg); font-size: 72px; font-weight: 700; padding: 6px 28px 10px; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: 1px; line-height: 1.1; }
+#box.center #label { font-size: 46px; padding: 10px 40px; }
+#box.center #time { font-size: 200px; padding: 10px 60px 20px; }
+#box.done #time { animation: blink 1s steps(2, start) infinite; }
+@keyframes blink { to { visibility: hidden; } }
+#box.in { opacity: 1; transform: none; }
+#box.center.in { transform: translate(-50%, -50%); }
+#box.out { transition-duration: .3s; }
+</style></head>
+<body><div id="stage"><div id="box" data-def="tr">
+  <div id="label"><span id="f0"></span></div>
+  <div id="time">00:00</div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { const k = window.innerWidth / 1920; $('stage').style.transform = 'scale(' + k + ')'; }
+window.addEventListener('resize', fit); fit();
+let d = { mode: 'clock', seconds: 300, target: '' };
+let started = Date.now();
+let lastSeconds = null;
+function parse(s) {
+  if (s && typeof s === 'object') return s;
+  try { return JSON.parse(s); } catch (e) { return {}; }
+}
+const pad = (n) => String(n).padStart(2, '0');
+function fmt(sec, withHours) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return h || withHours ? h + ':' + pad(m) + ':' + pad(s) : pad(m) + ':' + pad(s);
+}
+function targetDate(t) {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t || '');
+  if (!m) return null;
+  const x = new Date();
+  x.setHours(Number(m[1]), Number(m[2]), Number(m[3] || 0), 0);
+  return x;
+}
+function tick() {
+  const now = new Date();
+  let txt = '';
+  let done = false;
+  if (d.mode === 'until') {
+    const t = targetDate(d.target);
+    const left = t ? (t - now) / 1000 : 0;
+    done = left <= 0;
+    txt = fmt(Math.ceil(left), false);
+  } else if (d.mode === 'timer') {
+    const left = (d.seconds || 0) - (Date.now() - started) / 1000;
+    done = left <= 0;
+    txt = fmt(Math.ceil(left), false);
+  } else if (d.mode === 'stopwatch') {
+    txt = fmt((Date.now() - started) / 1000, false);
+  } else {
+    txt = pad(now.getHours()) + ':' + pad(now.getMinutes()) + (d.seconds_show === false ? '' : ':' + pad(now.getSeconds()));
+  }
+  $('time').textContent = txt;
+  $('box').classList.toggle('done', done);
+}
+function update(s) {
+  const n = parse(s);
+  const r = document.documentElement.style;
+  if (n.bg) r.setProperty('--bg', n.bg);
+  if (n.accent) r.setProperty('--accent', n.accent);
+  if (n.text) r.setProperty('--text', n.text);
+  if (n.font) r.setProperty('--font', "'" + n.font + "', 'Segoe UI', Arial, sans-serif");
+  $('f0').textContent = n.f0 || '';
+  $('label').classList.toggle('empty', !n.f0);
+  const box = $('box');
+  for (const a of ['tl', 'tr', 'bl', 'br', 'center']) box.classList.toggle(a, (n.align || box.dataset.def) === a);
+  if (n.mode !== d.mode || n.seconds !== lastSeconds) started = Date.now(); // odštevanje začne znova samo ob spremembi
+  lastSeconds = n.seconds;
+  d = n;
+  tick();
+}
+function play() { started = Date.now(); tick(); const b = $('box'); b.classList.remove('out'); void b.offsetWidth; b.classList.add('in'); }
+function stop() { const b = $('box'); b.classList.add('out'); b.classList.remove('in'); }
+function next() { started = Date.now(); tick(); }
+setInterval(tick, 200);
+tick();
+</script></body></html>

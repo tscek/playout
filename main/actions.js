@@ -11,7 +11,7 @@ const { AtemDevice } = require('./devices/atem');
 const { Xr18Device } = require('./devices/xr18');
 
 const DEVICE_TYPES = { atem: AtemDevice, xr18: Xr18Device };
-const STEP_TYPES = ['atem', 'xr18', 'http', 'osc', 'wait'];
+const STEP_TYPES = ['atem', 'xr18', 'http', 'osc', 'wait', 'title'];
 
 function cleanStr(v, max = 200) {
   return typeof v === 'string' ? v.trim().slice(0, max) : '';
@@ -216,6 +216,10 @@ class ActionManager extends EventEmitter {
         await new Promise((res, rej) => this._udp.send(buf, step.port, step.host, (e) => (e ? rej(e) : res())));
         return;
       }
+      case 'title':
+        if (!this.local) throw new Error('Napisi niso na voljo');
+        await this.local(step);
+        return;
       default:
         throw new Error(`Neznan korak: ${step.type}`);
     }

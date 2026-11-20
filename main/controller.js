@@ -12,6 +12,7 @@ const { VIDEO_MODES } = require('./engine/caspar-config');
 const { describeDisplay } = require('./engine/displays');
 const { Playlist } = require('./playlist');
 const { probeSize } = require('./probe');
+const { installTitleMethods } = require('./controller-titles');
 const { ProjectStore, scanMedia, freeName, safeFolderName, safeRelFolder, isInside, toRel } = require('./projects');
 
 const PROGRAM_CHANNEL = 1;
@@ -71,7 +72,10 @@ class Controller extends EventEmitter {
     this.trashItem = trashItem; // premik datoteke v koš (Electron shell.trashItem)
     this.monitors = monitors; // { 1: ChannelMonitor, 2: ChannelMonitor }
     this.actions = actions; // shranjene akcije (ATEM, XR18, HTTP, OSC)
-    if (actions) actions.on('changed', () => this._changed());
+    if (actions) {
+      actions.on('changed', () => this._changed());
+      actions.local = (step) => this._actionLocalStep(step); // koraki, ki jih izvede Playout sam (napisi)
+    }
     this.osc = osc;
     this.engine = engine;
     this.dataDir = dataDir;
@@ -92,6 +96,7 @@ class Controller extends EventEmitter {
     this.copying = null; // { name, done, total } med kopiranjem v projektno mapo
     this.folders = [];
     this.folderError = '';
+    this._initTitles();
     this._openProject(this.projects.currentId);
     this._ovl = { 1: { bank: 0, ids: [], keys: [] }, 2: { bank: 0, ids: [], keys: [] } }; // plasti na kanalu
     this._ovlGen = 0;
@@ -170,6 +175,7 @@ class Controller extends EventEmitter {
       panic: this.panic,
       actions: this.actions ? this.actions.getState() : { devices: [], actions: [] },
       project: this.projectState(),
+      titles: this.titlesState(),
       transitions: TRANSITIONS,
       directions: DIRECTIONS,
       times: this.times,
@@ -244,6 +250,7 @@ class Controller extends EventEmitter {
       for (const m of Object.values(this.monitors)) if (!m.server) await m.start();
     }
     await this.refreshDisplays();
+    this._installTemplates();
     await this.engine.start(this.engineOptions());
   }
 
@@ -439,6 +446,7 @@ class Controller extends EventEmitter {
     if (!Array.isArray(this.library.items)) this.library.items = [];
     this.playlist = new Playlist(readJson(this.playlistFile, null));
     this._migrateLook();
+    this._openTitles(dir);
     this.settings.panicSource = this.project.panicSource || '';
     this.folders = [];
     this.folderError = '';
@@ -594,6 +602,7 @@ class Controller extends EventEmitter {
   }
 
   async _clearAll() {
+    await this._clearTitles();
     if (this.engine.status === 'running') {
       if (this.program.item) await this.clearProgram(false).catch(() => {});
       if (this.preview.item) await this.clearPreview().catch(() => {});
@@ -750,6 +759,12 @@ class Controller extends EventEmitter {
     }
     this.library.items = this.library.items.filter((x) => x.id !== id);
     this.playlist.removeMedia(id);
+    this.titles.forgetMedia(id);
+    this._saveTitles();
+    if (this.project.brand && this.project.brand.logo === id) {
+      this.project.brand.logo = null;
+      this._saveProjectMeta();
+    }
     if (this.settings.panicSource === id) {
       this.settings.panicSource = '';
       this.project.panicSource = '';
@@ -776,6 +791,8 @@ class Controller extends EventEmitter {
         return o;
       }),
       playlist: this.playlist.toJSON(),
+      titles: this.titles.toJSON(),
+      brand: this.project.brand,
       actions: this.actions ? { devices: this.actions.devices, actions: this.actions.actions } : null,
     };
     fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
@@ -810,7 +827,9 @@ class Controller extends EventEmitter {
     writeJson(path.join(dir, 'playlist.json'), data.playlist || null);
     const meta = this.projects.meta(id);
     meta.panicSource = typeof data.panicSource === 'string' ? data.panicSource : '';
+    if (data.brand) meta.brand = data.brand;
     this.projects.saveMeta(id, meta);
+    if (data.titles) writeJson(path.join(dir, 'titles.json'), data.titles);
     // Akcije in naprave, ki jih na tem računalniku še ni, se dodajo (IP naslove popraviš v Akcijah).
     if (this.actions && data.actions) {
       for (const d of data.actions.devices || []) {
@@ -1394,6 +1413,8 @@ class Controller extends EventEmitter {
     }
     if (c.startsWith('action:')) return this.runAction(c.slice(7));
     if (c.startsWith('group:')) return this.cueGroup(c.slice(6));
+    if (c.startsWith('title:')) return this.titleToggle(c.slice(6));
+    if (c === 'titlesOff') return this.titlesAllOff();
     this._error(`Neznan ukaz: ${c}`);
   }
 
@@ -1421,6 +1442,7 @@ class Controller extends EventEmitter {
       project: this.project.name,
       groups: this.playlist.groups.map((g) => ({ id: g.id, name: g.name })),
       actions: this.actions ? this.actions.actions.map((a) => ({ id: a.id, name: a.name })) : [],
+      titles: this.titlesState().items.map((t) => ({ id: t.id, name: t.label, onAir: this._titleOnLayer(t.id) !== null })),
     };
   }
 
@@ -1878,6 +1900,7 @@ class Controller extends EventEmitter {
       }
     }
     await this._restoreProgram();
+    await this._restoreTitles();
     if (this.preview.item) {
       try {
         await this._cue();
@@ -2045,5 +2068,7 @@ function samePath(a, b) {
   const n = (p) => String(p).replace(/\\/g, '/').replace(/\.[^./]*$/, '').toLowerCase();
   return n(a) === n(b);
 }
+
+installTitleMethods(Controller);
 
 module.exports = { Controller, DEFAULT_HOTKEYS, fpsOf, samePath, dbToGain, PROGRAM_CHANNEL, PREVIEW_CHANNEL, LAYER_MAIN, MONITOR_CONSUMER, TRANSITIONS };

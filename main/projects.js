@@ -68,6 +68,7 @@ class ProjectStore {
       name: (entry && entry.name) || m.name || 'Projekt',
       mediaDir: typeof m.mediaDir === 'string' && m.mediaDir ? m.mediaDir : null,
       panicSource: typeof m.panicSource === 'string' ? m.panicSource : '',
+      brand: m.brand && typeof m.brand === 'object' ? m.brand : null,
     };
   }
 

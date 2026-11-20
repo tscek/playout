@@ -1,0 +1,45 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Logotip v kotu</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); }
+.empty { display: none !important; }
+
+#box { position: absolute; opacity: 0; transition: opacity .6s ease; }
+#box.tr { top: 60px; right: 80px; } #box.tl { top: 60px; left: 80px; }
+#box.br { bottom: 60px; right: 80px; } #box.bl { bottom: 60px; left: 80px; }
+#logo img { display: block; max-width: 300px; max-height: 150px; filter: drop-shadow(0 2px 8px rgba(0,0,0,.45)); }
+#box.in { opacity: 1; }
+#box.out { transition-duration: .4s; }
+
+</style></head>
+<body><div id="stage"><div id="box" data-def="tr"><div id="logo"><img id="logoimg" alt=""></div></div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { const k = window.innerWidth / 1920; $('stage').style.transform = 'scale(' + k + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) {
+  if (s && typeof s === 'object') return s;
+  try { return JSON.parse(s); } catch (e) { return {}; }
+}
+function applyCommon(d) {
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  for (const k of ['f0', 'f1', 'f2']) if ($(k)) $(k).textContent = d[k] || '';
+  const img = $('logoimg');
+  if (img) { if (d.logo) img.src = d.logo; else img.removeAttribute('src'); }
+  if ($('logo')) $('logo').classList.toggle('has', !!d.logo);
+  const box = $('box');
+  for (const a of ['left', 'center', 'right', 'tl', 'tr', 'bl', 'br']) box.classList.toggle(a, (d.align || box.dataset.def) === a);
+  for (const k of ['f0', 'f1', 'f2']) if ($(k)) $(k).parentElement.classList.toggle('empty', !d[k]);
+}
+function update(s) { applyCommon(parse(s)); }
+function play() { const b = $('box'); b.classList.remove('out'); void b.offsetWidth; b.classList.add('in'); }
+function stop() { const b = $('box'); b.classList.add('out'); b.classList.remove('in'); }
+function next() {}
+</script></body></html>

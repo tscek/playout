@@ -20,7 +20,9 @@ const XR_CMDS = {
   unmutegroup: 'Mute skupina izklopi',
 };
 const XR_TARGETS = { ch: 'Kanal', bus: 'Bus (aux izhod)', lr: 'Glavni LR', dca: 'DCA', rtn: 'FX povratek', aux: 'Aux vhod' };
-const STEP_LABEL = { atem: 'ATEM', xr18: 'XR18', http: 'HTTP', osc: 'OSC', wait: 'Počakaj' };
+const STEP_LABEL = { atem: 'ATEM', xr18: 'XR18', http: 'HTTP', osc: 'OSC', wait: 'Počakaj', title: 'Napis' };
+const TITLE_CMDS = { on: 'Vklopi', off: 'Umakni', toggle: 'Vklopi / umakni', allOff: 'Vsi napisi dol' };
+const titleItems = () => (state && state.titles ? state.titles.items : []);
 
 const actState = () => (state && state.actions) || { devices: [], actions: [] };
 
@@ -55,6 +57,10 @@ function stepSummary(s) {
     case 'http': return `HTTP ${s.method || 'GET'} ${s.url || ''}`;
     case 'osc': return `OSC ${s.host || ''}:${s.port || ''} ${s.address || ''}`;
     case 'wait': return `Počakaj ${s.ms || 0} ms`;
+    case 'title': {
+      const t = titleItems().find((x) => x.id === s.target);
+      return s.cmd === 'allOff' ? 'Napisi: vsi dol' : `Napis ${TITLE_CMDS[s.cmd] || ''}: ${t ? t.label : '(ni v tem projektu)'}`;
+    }
     default: return s.type;
   }
 }
@@ -140,6 +146,7 @@ function stepEditor(a, si) {
     if (v === 'http') Object.assign(base, { method: 'GET', url: 'http://' });
     if (v === 'osc') Object.assign(base, { host: '', port: 8000, address: '/', args: '' });
     if (v === 'wait') Object.assign(base, { ms: 500 });
+    if (v === 'title') Object.assign(base, { cmd: 'on', target: (titleItems()[0] || {}).id || '' });
     const steps = a.steps.map((x, i) => (i === si ? base : x));
     run('actions.save', { action: { ...a, steps } });
   }));
@@ -197,6 +204,17 @@ function stepEditor(a, si) {
       field('Vrata', input('number', s.port, (v) => saveStep({ port: v }), { min: 1, max: 65535 })),
       field('Naslov', input('text', s.address, (v) => saveStep({ address: v }), { placeholder: '/pot/ukaz' })),
       field('Argumenti', input('text', s.args, (v) => saveStep({ args: v }), { placeholder: 'npr. 1 0.5 besedilo' })));
+  }
+  if (s.type === 'title') {
+    row.append(field('Ukaz', select(Object.entries(TITLE_CMDS), s.cmd || 'on', (v) => saveStep({ cmd: v }))));
+    if (s.cmd !== 'allOff') {
+      const opts = titleItems().map((t) => [t.id, t.label]);
+      if (!opts.length) row.append(el('span', 'bad-text', 'V tem projektu ni napisov (zavihek Napisi).'));
+      else {
+        if (!opts.some((o) => o[0] === s.target)) opts.unshift([s.target || '', '(izberi napis)']);
+        row.append(field('Napis', select(opts, s.target || '', (v) => saveStep({ target: v }))));
+      }
+    }
   }
   if (s.type === 'wait') row.append(field('Milisekund', input('number', s.ms || 0, (v) => saveStep({ ms: v }), { min: 0, max: 60000, step: 100 })));
 

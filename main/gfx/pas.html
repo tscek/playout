@@ -1,0 +1,57 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pas čez cel zaslon</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); }
+.empty { display: none !important; }
+
+#box { position: absolute; left: 0; right: 0; bottom: 70px; height: 110px; display: flex; align-items: stretch; color: var(--text);
+  transform: translateY(200px); transition: transform .55s cubic-bezier(.2,.8,.2,1); }
+#tag { background: var(--accent); color: var(--bg); font-size: 40px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+  display: flex; align-items: center; padding: 0 40px 0 140px; white-space: nowrap; }
+#main { flex: 1; background: var(--bg); display: flex; align-items: center; gap: 30px; padding: 0 40px; min-width: 0; opacity: .96; }
+#tag.empty + #main { padding-left: 140px; }
+#title { font-size: 52px; font-weight: 700; white-space: nowrap; }
+#subw { font-size: 40px; font-weight: 400; white-space: nowrap; opacity: .9; overflow: hidden; text-overflow: ellipsis; }
+#subw::before { content: ''; display: inline-block; width: 4px; height: 44px; background: var(--accent); margin-right: 30px; vertical-align: -6px; }
+#logo { display: none; background: #fff; align-items: center; justify-content: center; padding: 0 34px; }
+#logo.has { display: flex; }
+#logo img { max-height: 84px; max-width: 240px; }
+#box.in { transform: none; }
+#box.out { transition-duration: .35s; }
+
+</style></head>
+<body><div id="stage"><div id="box" data-def="left">
+  <div id="tag"><span id="f2"></span></div>
+  <div id="main"><div id="title"><span id="f0"></span></div><div id="subw"><span id="f1"></span></div></div>
+  <div id="logo"><img id="logoimg" alt=""></div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { const k = window.innerWidth / 1920; $('stage').style.transform = 'scale(' + k + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) {
+  if (s && typeof s === 'object') return s;
+  try { return JSON.parse(s); } catch (e) { return {}; }
+}
+function applyCommon(d) {
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  for (const k of ['f0', 'f1', 'f2']) if ($(k)) $(k).textContent = d[k] || '';
+  const img = $('logoimg');
+  if (img) { if (d.logo) img.src = d.logo; else img.removeAttribute('src'); }
+  if ($('logo')) $('logo').classList.toggle('has', !!d.logo);
+  const box = $('box');
+  for (const a of ['left', 'center', 'right', 'tl', 'tr', 'bl', 'br']) box.classList.toggle(a, (d.align || box.dataset.def) === a);
+  for (const k of ['f0', 'f1', 'f2']) if ($(k)) $(k).parentElement.classList.toggle('empty', !d[k]);
+}
+function update(s) { applyCommon(parse(s)); }
+function play() { const b = $('box'); b.classList.remove('out'); void b.offsetWidth; b.classList.add('in'); }
+function stop() { const b = $('box'); b.classList.add('out'); b.classList.remove('in'); }
+function next() {}
+</script></body></html>

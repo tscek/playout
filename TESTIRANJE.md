@@ -1,3 +1,35 @@
+# Test v0.12.0: napisi, celostna podoba, ura in odštevanje
+
+Namesti novo verzijo čez staro.
+
+## Novo v 0.12.0
+
+1. **Zavihek Napisi** (levo spodaj, poleg Medijev). Napisi so neodvisni od playliste: gredo čez vse, kar je na programu,
+   in ostanejo, dokler jih ne umakneš (ali po nastavljenih sekundah).
+   - Izberi predlogo in klikni *+ Nov napis*. Spodaj vpišeš ime, funkcijo …
+   - **VKLOPI** = napis z animacijo pride na program. **NA ZASLONU** (rdeče) = klik ga umakne z animacijo.
+   - 👁 = napis v preview (ko klikneš napis v seznamu, se sam pokaže v preview). ⧉ podvoji, ✕ izbriše, vrstni red spreminjaš z vlečenjem.
+   - Hkrati je lahko na zaslonu več napisov (npr. logotip v kotu + ime govorca). *Vsi dol* umakne vse.
+   - Ko je napis na zaslonu in mu spremeniš besedilo, se spremeni ob Enter (da se tipkanje ne vidi v živo).
+2. **Predloge**: *Klasični napis*, *Moderni napis (brez ozadja)*, *Pas čez cel zaslon* (z oznako, npr. V ŽIVO),
+   *Naslov na sredini*, *Ura / odštevanje*, *Logotip v kotu*.
+3. **🎨 Celostna podoba** (gumb v zavihku Napisi): **logotip** (slika iz Medijev, najbolje PNG s prosojnim ozadjem),
+   **barve** (ozadje, poudarek, besedilo) in **pisava**. Velja za vse napise v projektu, vsak projekt ima svojo.
+   Pri posameznem napisu lahko obkljukaš *svoje barve* ali izbereš drug logotip / brez logotipa.
+4. **Ura / odštevanje**: trenutna ura, odštevanje do ure (npr. do 20:00), odštevanje trajanja (začne, ko ga vklopiš;
+   na 00:00 utripa) ali štoparica. Položaj: kot zaslona ali velika na sredini.
+5. **Bližnjice in Stream Deck**: v Nastavitvah lahko vsakemu napisu določiš tipko (vklop/umik) in tipko za *Vsi dol*.
+   Companion: `/api/title/<ime>` (preklopi), `/api/title/<ime>/on`, `/api/title/<ime>/off`, `/api/titles/off`.
+6. **Akcije**: nov korak *Napis* (vklopi / umakni / vsi dol). Tako lahko npr. ob začetku posnetka iz playliste pride napis
+   ali pa en gumb hkrati preklopi ATEM in pokaže ime govorca.
+7. Monitorja v glavi pokažeta, koliko napisov je na programu in kateri je v preview.
+
+## Prosim, preveri
+
+- Dodaj logotip stranke (PNG) v Medije, ga izberi v *Celostni podobi* in nastavi barve. Ali so napisi lepi na pravem zaslonu?
+- Ali je velikost napisov prava (na 1080p)? Če želiš, dodam nastavitev velikosti.
+- Če imaš kakšen napis, ki ga pogosto uporabljaš drugače (npr. dve osebi hkrati), mi pošlji sliko in naredim predlogo.
+
 # Test v0.11.0: bližnjice, višina monitorjev, iskalnik
 
 Namesti novo verzijo čez staro.

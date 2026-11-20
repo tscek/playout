@@ -82,6 +82,19 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       const st = controller.briefState();
       if (cmd === 'action') cmd = `action:${find(st.actions, parts.slice(1).join('/'))}`;
       else if (cmd === 'group') cmd = `group:${find(st.groups, parts.slice(1).join('/'))}`;
+      else if (cmd === 'titles' && parts[1] === 'off') cmd = 'titlesOff';
+      else if (cmd === 'title') {
+        // /api/title/<ime ali id>[/on|/off|/toggle]
+        let rest = parts.slice(1);
+        let op = 'toggle';
+        if (rest.length > 1 && ['on', 'off', 'toggle'].includes(rest[rest.length - 1])) op = rest.pop();
+        const t = controller.findTitle(rest.join('/'));
+        if (!t) throw new Error(`Ni najdeno: ${rest.join('/')}`);
+        if (op === 'on') await controller.titleOn(t.id);
+        else if (op === 'off') await controller.titleOff(t.id);
+        else await controller.titleToggle(t.id);
+        return send(200, { ok: true });
+      }
       await controller.runCommand(cmd);
       return send(200, { ok: true });
     } catch (e) {
@@ -144,6 +157,16 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'preview.mark': (a) => controller.markPreview(a.which, !!a.clear),
     'playlist.cueGroup': (a) => controller.cueGroup(a.groupId),
     'preview.clear': () => controller.clearPreview(),
+    'titles.add': (a) => controller.addTitle((a && a.patch) || {}, a && a.after),
+    'titles.set': (a) => controller.setTitle(a.id, a.patch),
+    'titles.remove': (a) => controller.removeTitle(a.id),
+    'titles.move': (a) => controller.moveTitle(a.id, a.index),
+    'titles.on': (a) => controller.titleOn(a.id),
+    'titles.off': (a) => controller.titleOff(a.id),
+    'titles.toggle': (a) => controller.titleToggle(a.id),
+    'titles.allOff': () => controller.titlesAllOff(),
+    'titles.preview': (a) => controller.titlePreview(a && a.id),
+    'brand.set': (a) => controller.setBrand(a.patch),
     'take.cut': () => controller.take('cut'),
     'take.auto': () => controller.take('auto'),
     ...extraActions,

@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Klasični napis</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); }
+#lt { position: absolute; bottom: 120px; display: flex; align-items: stretch; }
+#lt.left { left: 140px; }
+#lt.center { left: 50%; transform: translateX(-50%); }
+#lt.right { right: 140px; flex-direction: row-reverse; }
+#logo { width: 0; background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  transition: width .45s cubic-bezier(.2,.8,.2,1) .05s; }
+#logo img { max-width: 120px; max-height: 108px; object-fit: contain; }
+#lt.in #logo.has { width: 148px; }
+#txt { display: flex; flex-direction: column; justify-content: center; }
+#bar { position: relative; background: var(--bg); color: var(--text); padding: 14px 36px 12px; font-size: 60px; font-weight: 700;
+  white-space: nowrap; clip-path: inset(0 100% 0 0); transition: clip-path .55s cubic-bezier(.2,.8,.2,1) .2s; line-height: 1.15; }
+#lt.right #bar, #lt.right #sub { text-align: right; }
+#lt.right #bar { clip-path: inset(0 0 0 100%); }
+#bar::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; background: var(--accent); }
+#lt.right #bar::before { left: auto; right: 0; }
+#sub { background: var(--accent); color: var(--bg); padding: 8px 36px 9px; font-size: 38px; font-weight: 600; white-space: nowrap; align-self: flex-start;
+  clip-path: inset(0 100% 0 0); transition: clip-path .5s cubic-bezier(.2,.8,.2,1) .45s; line-height: 1.15; }
+#lt.right #sub { align-self: flex-end; clip-path: inset(0 0 0 100%); }
+#lt.center #sub { align-self: center; }
+#sub.empty { display: none; }
+#lt.in #bar, #lt.in #sub { clip-path: inset(0 0 0 0); }
+#lt.out #bar, #lt.out #sub, #lt.out #logo { transition-delay: 0s; transition-duration: .35s; }
+#lt.out { opacity: 0; transition: opacity .35s ease .1s; }
+</style></head>
+<body><div id="stage"><div id="lt" class="left">
+  <div id="logo"><img id="logoimg" alt=""></div>
+  <div id="txt"><div id="bar"><span id="f0"></span></div><div id="sub"><span id="f1"></span></div></div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { const k = window.innerWidth / 1920; $('stage').style.transform = 'scale(' + k + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) {
+  if (s && typeof s === 'object') return s;
+  try { return JSON.parse(s); } catch (e) { return {}; }
+}
+function update(s) {
+  const d = parse(s);
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  $('f0').textContent = d.f0 || '';
+  $('f1').textContent = d.f1 || '';
+  $('sub').classList.toggle('empty', !d.f1);
+  const lt = $('lt');
+  for (const a of ['left', 'center', 'right']) lt.classList.toggle(a, (d.align || 'left') === a);
+  if (d.logo) $('logoimg').src = d.logo; else $('logoimg').removeAttribute('src');
+  $('logo').classList.toggle('has', !!d.logo);
+}
+function play() { const lt = $('lt'); lt.classList.remove('out'); void lt.offsetWidth; lt.classList.add('in'); }
+function stop() { const lt = $('lt'); lt.classList.add('out'); lt.classList.remove('in'); }
+function next() {}
+</script></body></html>

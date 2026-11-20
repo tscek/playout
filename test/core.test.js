@@ -781,3 +781,89 @@ test('bližnjice in HTTP vmesnik (Stream Deck / Companion)', async () => {
     await engine.stop();
   }
 });
+
+test('napisi: celostna podoba, vklop/izklop, posodobitev v živo, izvoz', async () => {
+  const { ctl, engine, sent, dir } = makeController();
+  try {
+    const logo = path.join(dir, 'logo.png');
+    fs.writeFileSync(logo, 'x');
+    ctl.templateDir = path.join(dir, 'tpl');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    assert.ok(fs.existsSync(path.join(dir, 'tpl', 'playout-klasicni.html')), 'predloge so nameščene');
+    ctl.addFiles([logo]);
+    const logoId = ctl.library.items[0].id;
+    await ctl.setBrand({ logo: logoId, bg: '#112233', accent: '#ffcc00', font: 'Arial' });
+    const id = ctl.addTitle({ template: 'klasicni', f0: 'Ana "Novak"', f1: 'vodja' });
+    const t = ctl.titles.get(id);
+    assert.deepStrictEqual(ctl._titleData(t).bg, '#112233');
+    assert.ok(ctl._titleData(t).logo.startsWith('file://'));
+    sent.length = 0;
+    await ctl.titleOn(id);
+    const add = sent.find((c) => c.startsWith('CG 1-60 ADD 0 "playout-klasicni" 1 '));
+    assert.ok(add, sent.join('\n'));
+    assert.ok(add.includes('\\"f0\\":\\"Ana \\\\\\"Novak\\\\\\"\\"'), add); // narekovaji dvojno ubežani
+    assert.deepStrictEqual(ctl.titlesState().onAir, [id]);
+    // drug napis gre na naslednjo plast
+    const id2 = ctl.addTitle({ template: 'logo' });
+    await ctl.titleToggle(id2);
+    assert.ok(sent.some((c) => c.startsWith('CG 1-61 ADD 0 "playout-logo"')));
+    // sprememba besedila in barv velja takoj
+    sent.length = 0;
+    await ctl.setTitle(id, { f0: 'Ana Kovač', bg: '#ff0000' });
+    assert.ok(sent.some((c) => c.startsWith('CG 1-60 UPDATE 0 ') && c.includes('Kovač') && c.includes('#ff0000')), sent.join('\n'));
+    sent.length = 0;
+    await ctl.setBrand({ accent: '#00ff00' });
+    assert.ok(sent.some((c) => c.startsWith('CG 1-60 UPDATE') && c.includes('#00ff00')));
+    // predloga zamenjana na programu = ponovno naloži
+    sent.length = 0;
+    await ctl.setTitle(id, { template: 'moderni' });
+    assert.ok(sent.some((c) => c.startsWith('CG 1-60 ADD 0 "playout-moderni"')));
+    // izklop: izhodna animacija, nato počisti plast
+    sent.length = 0;
+    await ctl.titleOff(id);
+    assert.ok(sent.includes('CG 1-60 STOP 0'));
+    assert.deepStrictEqual(ctl.titlesState().onAir, [id2]);
+    await waitFor(() => sent.includes('CLEAR 1-60'), 3000);
+    assert.ok(!ctl.titleSlots.has(60));
+    // preview
+    await ctl.titlePreview(id);
+    assert.ok(sent.some((c) => c.startsWith('CG 2-60 ADD 0 "playout-moderni"')));
+    // samodejni izklop
+    await ctl.setTitle(id2, { duration: 1 });
+    await ctl.titleOff(id2);
+    await waitFor(() => !ctl.titleSlots.size, 3000);
+    await ctl.titleOn(id2);
+    await waitFor(() => ctl.titlesState().onAir.length === 0, 3000);
+    // ukaz za bližnjico in iskanje po imenu
+    await ctl.runCommand(`title:${id}`);
+    assert.deepStrictEqual(ctl.titlesState().onAir, [id]);
+    assert.strictEqual(ctl.findTitle('ana kovač').id, id);
+    await ctl.runCommand('titlesOff');
+    assert.deepStrictEqual(ctl.titlesState().onAir, []);
+    // korak akcije "Napis"
+    const { ActionManager } = require('../main/actions');
+    const am = new ActionManager({ file: path.join(dir, 'actions.json') });
+    am.local = (st) => ctl._actionLocalStep(st);
+    const act = am.saveAction({ name: 'Ime gor', steps: [{ type: 'title', cmd: 'on', target: id2 }] });
+    await am.run(typeof act === 'string' ? act : am.actions[0].id);
+    assert.deepStrictEqual(ctl.titlesState().onAir, [id2]);
+    await ctl._actionLocalStep({ cmd: 'allOff' });
+    assert.deepStrictEqual(ctl.titlesState().onAir, []);
+    // brisanje logotipa iz medijev: celostna podoba ostane brez njega
+    const file = path.join(dir, 'p.playout');
+    ctl.exportProject(file);
+    const exp = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.strictEqual(exp.titles.items.length, 2);
+    assert.strictEqual(exp.brand.accent, '#00ff00');
+    await ctl.importProject(file, dir);
+    assert.strictEqual(ctl.titles.items.length, 2);
+    assert.strictEqual(ctl.project.brand.bg, '#112233');
+    // preklop projekta počisti napise
+    await ctl.titleOn(ctl.titles.items[0].id);
+    assert.strictEqual(ctl.titleSlots.size, 1);
+  } finally {
+    ctl._unwatch();
+    await engine.stop();
+  }
+});

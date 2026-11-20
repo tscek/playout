@@ -106,11 +106,13 @@
     <section class="bottom">
     <section class="panel library">
       <div class="panel-head">
-        <h2>Mediji</h2>
+        <span class="left-tabs" id="left-tabs"><button data-t="media" class="on">Mediji</button><button data-t="titles">Napisi <span id="titles-onair-count" class="tab-count hidden"></span></button></span>
         <span class="hint-inline" id="lib-hint"></span>
         <div class="spacer"></div>
         <button id="btn-add" class="btn">+ Dodaj medije</button>
+        <button id="btn-brand" class="btn ghost small hidden" title="Logotip, barve in pisava za vse napise tega projekta">🎨 Celostna podoba</button>
       </div>
+      <div class="tab-pane" id="tab-media">
       <div class="lib-search">
         <input id="lib-search" type="search" placeholder="🔍 Išči po imenu datoteke …" autocomplete="off" />
       </div>
@@ -130,6 +132,17 @@
       <div id="lib-copying" class="lib-copying hidden"></div>
       <div id="drop-hint" class="drop-hint">Povleci datoteke sem ali klikni "Dodaj medije".</div>
       <ul id="library" class="library-list"></ul>
+      </div>
+      <div class="tab-pane hidden" id="tab-titles">
+        <div class="lib-tools titles-tools">
+          <select id="title-new-tpl" title="Predloga za nov napis"></select>
+          <button id="btn-title-add" class="btn small">+ Nov napis</button>
+          <div class="spacer"></div>
+          <button id="btn-titles-off" class="btn ghost small" title="Vsi vklopljeni napisi gredo z zaslona">Vsi dol</button>
+        </div>
+        <ul id="titles" class="library-list titles-list"></ul>
+        <div id="title-edit" class="title-edit hidden"></div>
+      </div>
     </section>
 
     <section class="panel playlist" id="playlist-panel">
@@ -318,6 +331,35 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-brand" class="dialog">
+    <form method="dialog">
+      <h2>Celostna podoba projekta</h2>
+      <small>Velja za vse napise v tem projektu. Pri posameznem napisu lahko barve ali logotip spremeniš.</small>
+      <label class="field">
+        <span>Logotip (slika iz Medijev, najbolje PNG s prosojnim ozadjem)</span>
+        <select id="brand-logo"></select>
+      </label>
+      <div class="field">
+        <span>Barve</span>
+        <div class="brand-colors">
+          <label><input type="color" id="brand-bg" /> Ozadje</label>
+          <label><input type="color" id="brand-accent" /> Poudarek</label>
+          <label><input type="color" id="brand-text" /> Besedilo</label>
+        </div>
+      </div>
+      <label class="field">
+        <span>Pisava</span>
+        <input id="brand-font" class="text-input" list="brand-fonts" autocomplete="off">
+        <datalist id="brand-fonts"></datalist>
+        <small>Pisava mora biti nameščena v Windows, sicer se uporabi Segoe UI.</small>
+      </label>
+      <small>Spremembe takoj veljajo tudi za napise, ki so na programu.</small>
+      <div class="dialog-actions">
+        <button value="close" class="btn">Zapri</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="dlg-log" class="dialog wide">
     <form method="dialog">
       <h2>Dnevnik motorja</h2>
@@ -350,5 +392,6 @@
 
   <script src="app.js"></script>
   <script src="actions.js"></script>
+  <script src="titles.js"></script>
 </body>
 </html>
