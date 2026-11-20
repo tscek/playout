@@ -1,0 +1,44 @@
+/* Plošča ATEM (okno aplikacije in tablica). */
+.ap { display: grid; gap: 8px; padding: 8px; margin-bottom: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.ap-head { display: flex; align-items: center; gap: 8px; }
+.ap-model { font-size: 12px; color: var(--muted); }
+.ap-model.bad { color: #ff8a8c; }
+.ap-empty, .ap-none { color: var(--muted); padding: 12px; text-align: center; font-size: 13px; }
+.ap-row { display: grid; grid-template-columns: 74px 1fr; gap: 6px; align-items: start; }
+.ap-lbl { font-size: 11px; font-weight: 800; letter-spacing: .06em; padding-top: 10px; }
+.ap-row.pgm .ap-lbl { color: #ff6b6d; }
+.ap-row.pvw .ap-lbl { color: #5fe39a; }
+.ap-btns { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 5px; }
+.ap button { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.ap button:active { filter: brightness(1.3); }
+.ap-in { padding: 6px 4px; font-size: 12px; font-weight: 700; line-height: 1.2; min-height: 42px; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ap-in.wide { font-weight: 500; }
+.ap-row.pgm .ap-in.on { background: var(--red); border-color: var(--red); color: #fff; }
+.ap-row.pvw .ap-in.on { background: var(--green); border-color: var(--green); color: #fff; }
+.ap-ctl { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+.ap-big { position: relative; overflow: hidden; min-width: 84px; padding: 12px 10px; font-weight: 800; letter-spacing: .06em; font-size: 16px; }
+.ap-big.cut { background: #b3262a; border-color: #b3262a; }
+.ap-big.auto { background: #2f6fd6; border-color: #2f6fd6; }
+.ap-big.auto.run { outline: 2px solid var(--amber); }
+.ap-bar { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: var(--amber); }
+.ap-big.ftb.on { background: var(--red); border-color: var(--red); color: #fff; animation: ap-blink 1s steps(2) infinite; }
+.ap-big.ftb.blink { outline: 2px solid var(--amber); }
+@keyframes ap-blink { 50% { opacity: .55; } }
+.ap-seg { display: flex; margin-left: auto; }
+.ap-seg button { border-radius: 0; padding: 8px 10px; font-size: 12px; font-weight: 700; }
+.ap-seg button:first-child { border-radius: 6px 0 0 6px; }
+.ap-seg button:last-child { border-radius: 0 6px 6px 0; }
+.ap-seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ap-keys { display: flex; flex-wrap: wrap; gap: 6px; }
+.ap-dsk { display: inline-flex; gap: 2px; }
+.ap-key { padding: 8px 12px; font-weight: 700; font-size: 13px; }
+.ap-key.small { padding: 8px 8px; font-size: 11px; }
+.ap-key.on { background: var(--red); border-color: var(--red); color: #fff; }
+.ap-key.run { outline: 2px solid var(--amber); }
+.ap-aux { display: flex; flex-wrap: wrap; gap: 10px; }
+.ap-auxl { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.ap-auxl select { font: inherit; font-weight: 400; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px; max-width: 220px; }
+.ap-macros summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 4px 0; }
+.ap-macros .ap-btns { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); margin-top: 6px; }

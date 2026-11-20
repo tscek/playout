@@ -25,6 +25,15 @@ function atemPresets(d, cache) {
   for (let a = 1; a <= nAux; a++) {
     for (const i of inputs) add(`aux.${a}.${i.id}`, `AUX ${a} = ${i.name}`, { cmd: 'aux', aux: a, input: i.id }, `AUX ${a}`);
   }
+  for (let k = 1; k <= Math.min(4, cache.dsk || 0); k++) {
+    add(`dskAuto.${k}`, `DSK ${k}: AUTO (vklop/izklop s prehodom)`, { cmd: 'dskAuto', num: k }, 'Ključi');
+    add(`dskOn.${k}`, `DSK ${k}: vklopi`, { cmd: 'dskOn', num: k }, 'Ključi');
+    add(`dskOff.${k}`, `DSK ${k}: izklopi`, { cmd: 'dskOff', num: k }, 'Ključi');
+  }
+  for (let k = 1; k <= Math.min(4, cache.usk || 0); k++) {
+    add(`uskOn.${k}`, `Key ${k}: vklopi`, { cmd: 'uskOn', num: k }, 'Ključi');
+    add(`uskOff.${k}`, `Key ${k}: izklopi`, { cmd: 'uskOff', num: k }, 'Ključi');
+  }
   for (const m of cache.macros || []) add(`macro.${m.index}`, `Makro: ${m.name}`, { cmd: 'macro', macro: m.index }, 'Makri');
   return out;
 }
@@ -80,6 +89,7 @@ function presetStep(pid, devices) {
     if (['autoTo', 'cutTo', 'preview'].includes(cmd) && num(a) !== null) return { type: 'atem', deviceId: d.id, cmd, input: num(a) };
     if (cmd === 'aux' && num(a) && num(b) !== null) return { type: 'atem', deviceId: d.id, cmd, aux: num(a), input: num(b) };
     if (cmd === 'macro' && num(a) !== null) return { type: 'atem', deviceId: d.id, cmd, macro: num(a) };
+    if (['dskAuto', 'dskOn', 'dskOff', 'uskOn', 'uskOff'].includes(cmd) && num(a) >= 1 && num(a) <= 4) return { type: 'atem', deviceId: d.id, cmd, num: num(a) };
     return null;
   }
   if (d.type === 'xr18') {
@@ -99,6 +109,8 @@ function cacheFromInfo(type, info) {
     return {
       inputs: (info.inputs || []).map((i) => ({ id: i.id, name: String(i.name || i.id).slice(0, 40) })),
       aux: info.aux || 0,
+      dsk: info.live ? info.live.dsk.length : 0,
+      usk: info.live && info.live.me[0] ? info.live.me[0].usk.length : 0,
       macros: (info.macros || []).map((m) => ({ index: m.index, name: String(m.name).slice(0, 40) })),
     };
   }

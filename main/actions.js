@@ -87,6 +87,7 @@ class ActionManager extends EventEmitter {
     c.on('log', (l) => this.log(l));
     c.on('status', () => this.emit('changed'));
     c.on('names', () => this._updateCache(d.id));
+    c.on('live', () => this.emit('live', d.id, c.live()));
     this.conns.set(d.id, c);
     try {
       c.start();
@@ -141,6 +142,14 @@ class ActionManager extends EventEmitter {
     this.lastResult[key] = { ok: !error, error, at: Date.now() };
     this.emit('changed');
     if (error) throw new Error(`${label}: ${error}`);
+  }
+
+  /** Ukaz neposredno napravi (plošča ATEM v vmesniku). */
+  async deviceRun(deviceId, step) {
+    const d = this.devices.find((x) => x.id === deviceId);
+    if (!d) throw new Error('Naprava ne obstaja');
+    const s = normStep({ ...step, type: d.type, deviceId });
+    await this._runStep(s);
   }
 
   _save() {

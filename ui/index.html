@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Playout</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="atem-panel.css">
 </head>
 <body>
   <header class="topbar">
@@ -106,7 +107,7 @@
     <section class="bottom">
     <section class="panel library">
       <div class="panel-head">
-        <span class="left-tabs" id="left-tabs"><button data-t="media" class="on">Mediji</button><button data-t="titles">Napisi <span id="titles-onair-count" class="tab-count hidden"></span></button></span>
+        <span class="left-tabs" id="left-tabs"><button data-t="media" class="on">Mediji</button><button data-t="titles">Napisi <span id="titles-onair-count" class="tab-count hidden"></span></button><button data-t="atem">ATEM</button></span>
         <span class="hint-inline" id="lib-hint"></span>
         <div class="spacer"></div>
         <button id="btn-add" class="btn">+ Dodaj medije</button>
@@ -144,6 +145,7 @@
         <ul id="titles" class="library-list titles-list"></ul>
         <div id="title-edit" class="title-edit hidden"></div>
       </div>
+      <div class="tab-pane hidden" id="tab-atem"><div id="atem-panels" class="atem-panels"></div></div>
     </section>
 
     <section class="panel playlist" id="playlist-panel">
@@ -442,6 +444,7 @@
     </form>
   </dialog>
 
+  <script src="atem-panel.js"></script>
   <script src="app.js"></script>
   <script src="actions.js"></script>
   <script src="titles.js"></script>

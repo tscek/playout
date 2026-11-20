@@ -1,5 +1,6 @@
 'use strict';
 // Tablica: upravljanje Playout prek omrežja (CUT, AUTO, playlista, napisi, akcije, panika) in mali monitor programa.
+/* global AtemPanel */
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, text) => {
@@ -68,6 +69,8 @@ function connect() {
     } else if (msg.type === 'times') {
       times = msg.times;
       renderNow();
+    } else if (msg.type === 'atem') {
+      AtemPanel.live(msg.id, msg.live);
     }
   };
 }
@@ -186,6 +189,9 @@ function render() {
   renderPlaylist();
   renderTitles();
   renderActions();
+  const devs = (state.actions && state.actions.devices) || [];
+  $('#r-tab-atem').classList.toggle('hidden', !devs.some((d) => d.type === 'atem'));
+  AtemPanel.render($('#p-atem'), devs, (deviceId, step) => call('atem.run', { deviceId, step }).catch((e) => showError(e.message)));
 }
 
 function renderPlaylist() {
@@ -306,10 +312,10 @@ function renderActions() {
 }
 
 function setTab(t) {
-  tab = ['playlist', 'titles', 'actions'].includes(t) ? t : 'playlist';
+  tab = ['playlist', 'titles', 'actions', 'atem'].includes(t) ? t : 'playlist';
   lsSet('remoteTab', tab);
   for (const b of document.querySelectorAll('#r-tabs button')) b.classList.toggle('on', b.dataset.t === tab);
-  for (const p of ['playlist', 'titles', 'actions']) $(`#p-${p}`).classList.toggle('hidden', p !== tab);
+  for (const p of ['playlist', 'titles', 'actions', 'atem']) $(`#p-${p}`).classList.toggle('hidden', p !== tab);
 }
 for (const b of document.querySelectorAll('#r-tabs button')) b.onclick = () => setTab(b.dataset.t);
 setTab(tab);

@@ -501,3 +501,4 @@ body.resizing { cursor: row-resize; user-select: none; }
 .preset-row .btn.running { border-color: var(--amber); }
 .preset-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #hotkey-filter { width: 100%; box-sizing: border-box; margin-bottom: 4px; }
+.atem-panels { overflow: auto; flex: 1; min-height: 0; padding: 0 2px; }

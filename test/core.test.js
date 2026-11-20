@@ -1074,3 +1074,12 @@ test('slideshow: skupina iz slik, zamegljeno ozadje, dinamični zoom', async () 
     await engine.stop();
   }
 });
+
+test('ATEM ključi kot preseti', () => {
+  const { presetStep, buildPresets } = require('../main/presets');
+  const devs = [{ id: 'a1', type: 'atem', name: 'M', cache: { inputs: [], aux: 0, dsk: 2, usk: 1, macros: [] } }];
+  const ids = buildPresets(devs, (d) => d.cache).map((p) => p.id);
+  assert.ok(ids.includes('a1.dskAuto.2') && ids.includes('a1.uskOn.1') && !ids.includes('a1.uskOn.2'));
+  assert.deepStrictEqual(presetStep('a1.dskAuto.2', devs), { type: 'atem', deviceId: 'a1', cmd: 'dskAuto', num: 2 });
+  assert.strictEqual(presetStep('a1.dskAuto.9', devs), null);
+});

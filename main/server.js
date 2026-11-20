@@ -15,7 +15,7 @@ const LAN_PORT = 8090;
 const REMOTE_ACTIONS = new Set([
   'state.get', 'take.cut', 'take.auto', 'preview.load', 'preview.clear', 'program.clear', 'program.panic', 'program.direct',
   'playlist.cueGroup', 'seek', 'step', 'playPause', 'media.volume', 'media.mute', 'actions.run',
-  'titles.on', 'titles.off', 'titles.toggle', 'titles.allOff', 'titles.preview', 'remote.command',
+  'titles.on', 'titles.off', 'titles.toggle', 'titles.allOff', 'titles.preview', 'remote.command', 'atem.run',
 ]);
 
 /** Naslovi IPv4 tega računalnika v lokalnem omrežju. */
@@ -282,6 +282,10 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'brand.set': (a) => controller.setBrand(a.patch),
     'lan.info': () => lanInfo(),
     'remote.command': (a) => controller.runCommand(a.cmd),
+    'atem.run': (a) => {
+      if (!controller.actions) throw new Error('Naprave niso na voljo');
+      return controller.actions.deviceRun(a.deviceId, a.step || {});
+    },
     'take.cut': () => controller.take('cut'),
     'take.auto': () => controller.take('auto'),
     ...extraActions,
@@ -299,6 +303,7 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     broadcast({ type: 'state', state });
   });
   controller.on('times', (times) => broadcast({ type: 'times', times }));
+  controller.on('atem', (a) => broadcast({ type: 'atem', id: a.id, live: a.live }));
   if (sysload) sysload.on('update', (load) => broadcast({ type: 'load', load: { ...load, engine: controller.engineRate() } }));
   controller.engine.on('log', (line) => broadcast({ type: 'log', line }));
 

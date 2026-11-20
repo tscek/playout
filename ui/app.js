@@ -1,5 +1,5 @@
 'use strict';
-/* global playoutDesktop */
+/* global playoutDesktop, AtemPanel */
 
 // ---------- povezava z aplikacijo ----------
 
@@ -7,7 +7,7 @@ const api = (() => {
   let ws = null;
   let nextId = 1;
   const waiting = new Map();
-  const listeners = { state: [], log: [], times: [], open: [], close: [], load: [] };
+  const listeners = { state: [], log: [], times: [], open: [], close: [], load: [], atem: [] };
 
   function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
@@ -27,7 +27,7 @@ const api = (() => {
         if (msg.ok) w.resolve(msg.data);
         else w.reject(new Error(msg.error));
       } else if (listeners[msg.type]) {
-        const payload = msg.type === 'state' ? msg.state : msg.type === 'times' ? msg.times : msg.type === 'load' ? msg.load : msg.line;
+        const payload = msg.type === 'state' ? msg.state : msg.type === 'times' ? msg.times : msg.type === 'load' ? msg.load : msg.type === 'atem' ? msg : msg.line;
         listeners[msg.type].forEach((f) => f(payload));
       }
     };
@@ -1160,6 +1160,8 @@ function render() {
   renderTakeKeys();
   if (typeof renderActions === 'function') renderActions();
   if (typeof renderTitles === 'function') renderTitles();
+  AtemPanel.render($('#atem-panels'), (state.actions && state.actions.devices) || [],
+    (deviceId, step) => run('atem.run', { deviceId, step }));
   renderEntryDialog();
   if (state.lastError && state.lastError !== render.lastError) showError(state.lastError);
   render.lastError = state.lastError;
@@ -1813,6 +1815,7 @@ api.on('times', (t) => {
   times = t;
   renderTimes();
 });
+api.on('atem', (m) => AtemPanel.live(m.id, m.live));
 api.on('log', (line) => {
   if ($('#dlg-log').open) appendLog(line);
 });
