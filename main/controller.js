@@ -46,6 +46,8 @@ const DEFAULT_SETTINGS = {
   masterVolumeDb: 0, // glavni fader programa v dB
   masterMuted: false,
   fadeSeconds: 0.5, // privzeti fade na začetku in koncu vnosa (0 = brez)
+  hotkeys: null, // { ukaz: 'Ctrl+F1', ... }; null = privzete
+  globalHotkeys: false, // bližnjice delujejo tudi, ko okno ni v ospredju
   panicSource: '', // '' = črno, sicer id posnetka (logo) iz knjižnice
   audioDelayFrames: 0, // zvok kasneje za toliko sličic (zakasnitev slike v CasparCG ne deluje, ko ima zaslon več Hz kot kanal)
 };
@@ -82,6 +84,7 @@ class Controller extends EventEmitter {
     const saved = readJson(this.settingsFile, {});
     if (!saved.settingsVersion && saved.programOutput === 'test') saved.programOutput = 'auto'; // v0.1.0 je imel privzeto testno okno
     this.settings = { ...DEFAULT_SETTINGS, ...saved, settingsVersion: 2 };
+    this.settings.hotkeys = normHotkeys(this.settings.hotkeys);
     this.displays = [];
     this.audioDevices = [];
     this.projects = new ProjectStore(dataDir);
@@ -270,7 +273,7 @@ class Controller extends EventEmitter {
 
   async updateSettings(patch) {
     const allowed = ['videoMode', 'programOutput', 'audioDevice', 'audioDelayFrames'];
-    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb', 'masterMuted', 'fadeSeconds'];
+    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb', 'masterMuted', 'fadeSeconds', 'hotkeys', 'globalHotkeys'];
     const next = { ...this.settings };
     for (const k of [...allowed, ...operational]) if (k in patch) next[k] = patch[k];
     if (!TRANSITIONS[next.transitionType]) next.transitionType = 'MIX';
@@ -285,6 +288,8 @@ class Controller extends EventEmitter {
     if (typeof next.panicSource !== 'string') next.panicSource = '';
     next.masterVolumeDb = clampDb(next.masterVolumeDb, 0);
     next.masterMuted = !!next.masterMuted;
+    next.hotkeys = normHotkeys(next.hotkeys);
+    next.globalHotkeys = !!next.globalHotkeys;
     next.fadeSeconds = Math.max(0, Math.min(10, Math.round((Number(next.fadeSeconds) || 0) * 100) / 100));
     const masterChanged = next.masterVolumeDb !== this.settings.masterVolumeDb || next.masterMuted !== this.settings.masterMuted;
     const panicChanged = next.panicSource !== this.settings.panicSource;
@@ -1362,6 +1367,63 @@ class Controller extends EventEmitter {
     return { fps: Math.round((ticks / dt) * 10) / 10, expected };
   }
 
+  // ---------- ukazi (bližnjice, HTTP, Stream Deck) ----------
+
+  /**
+   * Izvede ukaz po imenu: cut, auto, panic, next, prev, clear, fadeclear, pause, action:<id>, group:<id>.
+   * Uporabljajo ga globalne bližnjice in HTTP vmesnik.
+   */
+  async runCommand(cmd) {
+    const c = String(cmd || '');
+    if (c === 'cut' || c === 'auto') {
+      if (this.settings.previewMode === false) this._error('Brez preview: CUT/AUTO prek bližnjice ni mogoč');
+      return this.take(c);
+    }
+    if (c === 'panic') return this.setPanic(!this.panic);
+    if (c === 'panicOn') return this.setPanic(true);
+    if (c === 'panicOff') return this.setPanic(false);
+    if (c === 'next' || c === 'prev') return this.stepPreviewEntry(c === 'next' ? 1 : -1);
+    if (c === 'clear') return this.clearProgram(false);
+    if (c === 'fadeclear') return this.clearProgram(true);
+    if (c === 'pause') return this.playPause('program');
+    if (c === 'pvwClear') return this.clearPreview();
+    const steps = { stepBackFrame: -1, stepFwdFrame: 1, stepBackSec: -1, stepFwdSec: 1 };
+    if (c in steps) {
+      const fps = this.clipFps[PREVIEW_CHANNEL] || fpsOf(this.settings.videoMode);
+      return this.step('preview', c.endsWith('Sec') ? steps[c] : steps[c] / fps);
+    }
+    if (c.startsWith('action:')) return this.runAction(c.slice(7));
+    if (c.startsWith('group:')) return this.cueGroup(c.slice(6));
+    this._error(`Neznan ukaz: ${c}`);
+  }
+
+  /** Naslednji/prejšnji vnos playliste v preview (ali prvi, če v preview ni vnosa). */
+  async stepPreviewEntry(dir) {
+    const flat = this.playlist.flat();
+    if (!flat.length) this._error('Playlista je prazna');
+    const cur = this.preview.src ? flat.findIndex((x) => x.entry.id === this.preview.src.entryId) : -1;
+    const i = cur === -1 ? 0 : Math.max(0, Math.min(flat.length - 1, cur + (dir > 0 ? 1 : -1)));
+    const { entry } = flat[i];
+    return this.loadPreview(entry.mediaId, entry.id);
+  }
+
+  /** Kratko stanje za HTTP vmesnik. */
+  briefState() {
+    const t = this.times[PROGRAM_CHANNEL];
+    const pgm = this.program.item;
+    let left = null;
+    if (pgm && t && t.total) left = Math.max(0, (this._spec(pgm, this.program.src).outSec || t.total) - t.elapsed);
+    return {
+      program: pgm ? pgm.name : null,
+      preview: this.preview.item ? this.preview.item.name : null,
+      remaining: left === null ? null : Math.round(left * 10) / 10,
+      panic: this.panic,
+      project: this.project.name,
+      groups: this.playlist.groups.map((g) => ({ id: g.id, name: g.name })),
+      actions: this.actions ? this.actions.actions.map((a) => ({ id: a.id, name: a.name })) : [],
+    };
+  }
+
   // ---------- plasti in barve ----------
 
   _entryOf(src) {
@@ -1942,6 +2004,30 @@ class Controller extends EventEmitter {
   }
 }
 
+/** Bližnjice: ukaz -> tipka (oblika Electron, npr. "Ctrl+F1"). */
+const DEFAULT_HOTKEYS = {
+  cut: 'Enter',
+  auto: 'Space',
+  next: 'Down',
+  prev: 'Up',
+  stepBackFrame: ',',
+  stepFwdFrame: '.',
+  stepBackSec: 'Shift+,',
+  stepFwdSec: 'Shift+.',
+  panic: '',
+  pause: '',
+  fadeclear: '',
+};
+function normHotkeys(h) {
+  const out = { ...DEFAULT_HOTKEYS };
+  if (h && typeof h === 'object') {
+    for (const [k, v] of Object.entries(h)) {
+      if (typeof k === 'string' && k.length < 80 && typeof v === 'string' && v.length < 40) out[k] = v;
+    }
+  }
+  return out;
+}
+
 const MIN_DB = -40;
 function clampDb(v, def) {
   const n = Number(v);
@@ -1960,4 +2046,4 @@ function samePath(a, b) {
   return n(a) === n(b);
 }
 
-module.exports = { Controller, fpsOf, samePath, dbToGain, PROGRAM_CHANNEL, PREVIEW_CHANNEL, LAYER_MAIN, MONITOR_CONSUMER, TRANSITIONS };
+module.exports = { Controller, DEFAULT_HOTKEYS, fpsOf, samePath, dbToGain, PROGRAM_CHANNEL, PREVIEW_CHANNEL, LAYER_MAIN, MONITOR_CONSUMER, TRANSITIONS };

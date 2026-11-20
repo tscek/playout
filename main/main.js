@@ -3,7 +3,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { app, BrowserWindow, dialog, ipcMain, session, shell, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell, screen, globalShortcut } = require('electron');
 const { Engine } = require('./engine/engine');
 const { listDisplays } = require('./engine/displays');
 const { Controller } = require('./controller');
@@ -198,6 +198,33 @@ app.whenReady().then(async () => {
   uiUrl = `http://127.0.0.1:${srv.port}/`;
 
   ipcMain.handle('app:isDesktop', () => true);
+
+  // Globalne bližnjice (delujejo tudi, ko okno ni v ospredju): samo F-tipke in kombinacije s Ctrl/Alt.
+  let hotkeySig = '';
+  const applyGlobalHotkeys = () => {
+    const st = controller.settings;
+    const sig = JSON.stringify([st.globalHotkeys, st.hotkeys]);
+    if (sig === hotkeySig) return;
+    hotkeySig = sig;
+    globalShortcut.unregisterAll();
+    if (!st.globalHotkeys) return;
+    const failed = [];
+    for (const [cmd, acc] of Object.entries(st.hotkeys || {})) {
+      if (!acc || !/(^|\+)(F\d{1,2})$|Ctrl\+|Alt\+|CommandOrControl\+/.test(acc)) continue;
+      try {
+        const ok = globalShortcut.register(acc, () => {
+          controller.runCommand(cmd).catch((e) => engine._log(`Bližnjica ${acc}: ${e.message}`));
+        });
+        if (!ok) failed.push(acc);
+      } catch {
+        failed.push(acc);
+      }
+    }
+    if (failed.length) engine._log(`Globalnih bližnjic ni bilo mogoče nastaviti (zasedene?): ${failed.join(', ')}`);
+  };
+  controller.on('state', applyGlobalHotkeys);
+  applyGlobalHotkeys();
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 
   createWindow();
   controller.init().catch((e) => console.error(e));

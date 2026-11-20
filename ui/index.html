@@ -101,6 +101,8 @@
       </div>
     </section>
 
+    <div id="splitter" class="splitter" title="Povleci za višino monitorjev (dvoklik = privzeto)"></div>
+
     <section class="bottom">
     <section class="panel library">
       <div class="panel-head">
@@ -108,6 +110,9 @@
         <span class="hint-inline" id="lib-hint"></span>
         <div class="spacer"></div>
         <button id="btn-add" class="btn">+ Dodaj medije</button>
+      </div>
+      <div class="lib-search">
+        <input id="lib-search" type="search" placeholder="🔍 Išči po imenu datoteke …" autocomplete="off" />
       </div>
       <div class="lib-tools">
         <span class="seg" id="lib-filter">
@@ -180,6 +185,17 @@
         <input type="number" id="set-fade" min="0" max="10" step="0.1">
         <small>Slika in zvok se ob CUT dvigneta iz črnine in pred koncem posnetka spustita. 0 = brez. Vsak vnos ima lahko svojega (⚙ → Čas in konec).</small>
       </label>
+
+      <div class="field">
+        <span>Bližnjice</span>
+        <small>Klikni tipko pri ukazu in pritisni novo (lahko s Ctrl, Alt, Shift). ✕ odstrani. Enaka tipka ne more imeti dveh ukazov.</small>
+        <div id="hotkey-list" class="hotkey-list"></div>
+        <label class="act-field"><input type="checkbox" id="set-global-hotkeys"> Delujejo tudi, ko okno Playout ni v ospredju
+          (samo F-tipke in kombinacije s Ctrl ali Alt)</label>
+        <small>Stream Deck / Companion: ukaze pošlji kot HTTP na <code id="api-url">http://127.0.0.1:8088/api/cut</code>
+          (tudi <code>/api/auto</code>, <code>/api/panic</code>, <code>/api/next</code>, <code>/api/action/Ime akcije</code>, <code>/api/group/Ime skupine</code>, <code>/api/state</code>).</small>
+        <button type="button" class="btn ghost small" id="btn-hotkeys-reset">Privzete bližnjice</button>
+      </div>
 
       <label class="field">
         <span>PANIKA prikaže</span>

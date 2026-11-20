@@ -1,3 +1,27 @@
+# Test v0.11.0: bližnjice, višina monitorjev, iskalnik
+
+Namesti novo verzijo čez staro.
+
+## Novo v 0.11.0
+
+1. **Bližnjice po meri**: *Nastavitve → Bližnjice*. Klikni tipko ob ukazu (CUT, AUTO, PANIKA, naslednji/prejšnji, počisti, pavza …)
+   in pritisni novo tipko ali kombinacijo (Ctrl/Alt/Shift + tipka). Esc prekliče. Ena tipka velja samo za en ukaz.
+   Tipko lahko nastaviš tudi za vsako **akcijo** (ATEM, XR18 …) in za vsako **skupino** v playlisti (naloži prvi vnos skupine v preview).
+   *Privzeto* vrne prvotne tipke. Na gumbih CUT/AUTO piše trenutna tipka.
+2. **Globalne bližnjice** (kljukica v istem razdelku): F-tipke in kombinacije s Ctrl/Alt delujejo tudi, ko je v ospredju drug program
+   (npr. OBS ali ATEM Software Control). Navadne tipke (Enter, preslednica) delujejo samo v Playout, da ne motijo drugih programov.
+3. **Stream Deck / Bitfocus Companion**: v istem razdelku je naslov, npr. `http://IP:PORT/api/cut`.
+   V Companion uporabi *Generic HTTP → GET* na `/api/cut`, `/api/auto`, `/api/next`, `/api/panic`, `/api/action/<ime akcije>`, `/api/group/<ime skupine>`.
+   `/api/state` vrne, kaj je na programu in v preview.
+4. **Višina monitorjev**: med monitorji in spodnjim delom je ločnica. Povleci jo gor ali dol. Zapomni si višino, dvoklik vrne privzeto.
+5. **Iskalnik** nad Mediji: vpiši del imena, prikažejo se samo ujemajoče datoteke (z mapo, v kateri so). Esc počisti.
+6. Popravek: po zaprtju okna (npr. Nastavitve) Enter ni več znova odprl okna, bližnjice delujejo takoj.
+
+## Prosim, preveri
+
+- Nastavi CUT na npr. F5, preklopi v drug program in pritisni F5 (z vklopljenimi globalnimi bližnjicami).
+- Če imaš Stream Deck s Companion: en gumb na `/api/cut` in en na akcijo.
+
 # Test v0.10.0: okno vnosa, fade, obremenjenost
 
 Namesti novo verzijo čez staro.

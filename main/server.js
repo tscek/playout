@@ -40,6 +40,11 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       m.serve(req, res, fps);
       return;
     }
+    // HTTP vmesnik za Stream Deck / Bitfocus Companion: /api/cut, /api/auto, /api/action/<ime ali id> ...
+    if (urlPath.startsWith('/api/')) {
+      handleApi(urlPath.slice(5), res);
+      return;
+    }
     if (urlPath === '/') urlPath = '/index.html';
     const file = path.normalize(path.join(uiDir, urlPath));
     if (!file.startsWith(path.normalize(uiDir))) {
@@ -58,6 +63,31 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       res.end(data);
     });
   });
+
+  async function handleApi(p, res) {
+    const send = (code, obj) => {
+      res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(obj));
+    };
+    try {
+      const parts = p.split('/').filter(Boolean);
+      if (!parts.length || parts[0] === 'state') return send(200, { ok: true, ...controller.briefState() });
+      let cmd = parts[0];
+      const find = (list, key) => {
+        const k = String(key || '').toLowerCase();
+        const hit = list.find((x) => x.id === key) || list.find((x) => x.name.toLowerCase() === k);
+        if (!hit) throw new Error(`Ni najdeno: ${key}`);
+        return hit.id;
+      };
+      const st = controller.briefState();
+      if (cmd === 'action') cmd = `action:${find(st.actions, parts.slice(1).join('/'))}`;
+      else if (cmd === 'group') cmd = `group:${find(st.groups, parts.slice(1).join('/'))}`;
+      await controller.runCommand(cmd);
+      return send(200, { ok: true });
+    } catch (e) {
+      return send(400, { ok: false, error: e.message });
+    }
+  }
 
   const wss = new WebSocketServer({ server, path: '/ws' });
 

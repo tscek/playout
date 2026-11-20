@@ -77,7 +77,7 @@ body { display: flex; flex-direction: column; }
 
 .layout {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   gap: 12px;
   padding: 12px;
   flex: 1;
@@ -91,7 +91,7 @@ body { display: flex; flex-direction: column; }
   align-items: start;
 }
 .monitors.nopvw { grid-template-columns: 200px 1fr; }
-.monitor { width: 100%; max-width: calc(42vh * 16 / 9); justify-self: center; }
+.monitor { width: 100%; max-width: calc(var(--mon-h, 42vh) * 16 / 9); justify-self: center; }
 .monitors.nopvw .pgm { justify-self: start; }
 .monitors.nopvw .pvw { display: none; }
 
@@ -295,7 +295,7 @@ input[type=number] {
 .badge.next { background: rgba(240,168,48,.2); color: var(--amber); }
 .library-list li[draggable=true] { cursor: grab; }
 
-.mon-ctl { display: flex; align-items: center; gap: 12px; padding: 6px 10px 0; }
+.mon-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 10px 0; }
 .scrub { flex: 1; min-width: 0; accent-color: var(--muted); }
 .pgm .scrub { accent-color: var(--red); }
 .pvw .scrub { accent-color: var(--green); }
@@ -426,3 +426,23 @@ input[type=number] {
 .entry-dlg #entry-time .entry-edit { margin: 6px 12px; }
 .entry-dlg-note { display: block; margin: 8px 14px 0; }
 .mon-layers { margin-left: 8px; font-size: 11px; color: #8ab4ff; border: 1px solid #3d5c99; border-radius: 4px; padding: 0 5px; }
+
+/* Bližnjice */
+.hotkey-list { display: grid; gap: 3px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.hk-row { display: flex; align-items: center; gap: 6px; }
+.hk-label { flex: 1; font-size: 12px; }
+.hk-key { min-width: 130px; margin: 0; font-family: Consolas, monospace; }
+.hk-key.capture { border-color: var(--amber); color: var(--amber); }
+
+/* Ločnica med monitorji in spodnjim delom */
+.splitter { height: 8px; margin: -8px 0; cursor: row-resize; border-radius: 4px; position: relative; }
+.splitter::after { content: ''; position: absolute; left: 50%; top: 3px; width: 60px; height: 2px; margin-left: -30px; background: var(--line); border-radius: 2px; }
+.splitter:hover::after, .splitter.drag::after { background: var(--accent); width: 120px; margin-left: -60px; }
+body.resizing { cursor: row-resize; user-select: none; }
+
+/* Iskalnik medijev */
+.lib-search { padding: 0 10px 6px; }
+.lib-search input { width: 100%; box-sizing: border-box; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+.lib-search input:focus { outline: none; border-color: var(--accent); }
+.library li .path { opacity: .55; font-size: 11px; margin-left: 6px; }
+.library li.empty { opacity: .6; font-style: italic; cursor: default; }

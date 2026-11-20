@@ -298,6 +298,22 @@ function renderLibrary() {
   if (proj.copying) cp.textContent = `Kopiram v projektno mapo: ${proj.copying.name} (${proj.copying.done + 1}/${proj.copying.total}) …`;
 
   const visible = state.library.filter((it) => libFilter === 'all' || it.type === libFilter);
+  const q = libSearch.trim().toLowerCase();
+  if (q) {
+    const words = q.split(/\s+/);
+    const hits = visible.filter((it) => {
+      const n = (it.rel || it.name).toLowerCase();
+      return words.every((w) => n.includes(w));
+    });
+    for (const it of sortItems(hits)) {
+      const li = libItemRow(it, 0, ctx);
+      const dir = it.rel && it.rel.includes('/') ? it.rel.slice(0, it.rel.lastIndexOf('/')) : '';
+      if (dir) li.querySelector('.name').after(el('span', 'path', `📁 ${dir}`));
+      ul.append(li);
+    }
+    if (!hits.length) ul.append(el('li', 'empty', `Ni datotek z imenom "${libSearch.trim()}".`));
+    return;
+  }
   if (!proj.mediaDir) {
     for (const it of sortItems(visible)) ul.append(libItemRow(it, 0, ctx));
     return;
@@ -1062,10 +1078,22 @@ function render() {
   renderPanic();
   renderMonitors();
   fillTakeControls();
+  renderTakeKeys();
   if (typeof renderActions === 'function') renderActions();
   renderEntryDialog();
   if (state.lastError && state.lastError !== render.lastError) showError(state.lastError);
   render.lastError = state.lastError;
+}
+
+/** Na gumbih CUT/AUTO pokaži trenutno nastavljeno tipko. */
+function renderTakeKeys() {
+  const hk = (state.settings && state.settings.hotkeys) || {};
+  for (const [id, cmd, desc] of [['#btn-cut', 'cut', 'Takojšen preklop'], ['#btn-auto', 'auto', 'Preklop s prehodom']]) {
+    const b = $(id);
+    const k = accLabel(hk[cmd]) || '';
+    b.querySelector('small').textContent = k || 'brez tipke';
+    b.title = k ? `${desc} (${k})` : desc;
+  }
 }
 
 // ---------- projekti ----------
@@ -1336,31 +1364,183 @@ document.addEventListener('change', (ev) => {
   if (t && (t.type === 'checkbox' || t.type === 'radio' || t.tagName === 'SELECT') && !t.closest('dialog')) t.blur();
 });
 
+// ---------- bližnjice ----------
+
+const CODE_KEY = {
+  Space: 'Space', Enter: 'Enter', NumpadEnter: 'Enter', Escape: 'Esc', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete',
+  Insert: 'Insert', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+  ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Comma: ',', Period: '.', Minus: '-', Equal: '=', Slash: '/', Backslash: '\\', Semicolon: ';', Quote: "'",
+  BracketLeft: '[', BracketRight: ']', Backquote: '`',
+  NumpadAdd: 'numadd', NumpadSubtract: 'numsub', NumpadMultiply: 'nummult', NumpadDivide: 'numdiv', NumpadDecimal: 'numdec',
+};
+/** Tipka v obliki Electron (npr. "Ctrl+Shift+F1"); null za samostojne modifikatorje. */
+function accOf(ev) {
+  const c = ev.code || '';
+  let k = CODE_KEY[c];
+  if (!k && /^Key[A-Z]$/.test(c)) k = c.slice(3);
+  if (!k && /^Digit\d$/.test(c)) k = c.slice(5);
+  if (!k && /^Numpad\d$/.test(c)) k = `num${c.slice(6)}`;
+  if (!k && /^F\d{1,2}$/.test(c)) k = c;
+  if (!k) return null;
+  const mods = [];
+  if (ev.ctrlKey) mods.push('Ctrl');
+  if (ev.altKey) mods.push('Alt');
+  if (ev.shiftKey) mods.push('Shift');
+  if (ev.metaKey) mods.push('Super');
+  return [...mods, k].join('+');
+}
+const accLabel = (a) => (a || '').replace('Space', 'Preslednica').replace('Up', '↑').replace('Down', '↓').replace('Left', '←').replace('Right', '→').replace('Esc', 'Esc');
+
+const HOTKEY_LABEL = {
+  cut: 'CUT', auto: 'AUTO', next: 'Naslednji v preview', prev: 'Prejšnji v preview',
+  stepBackFrame: 'Preview: sličica nazaj', stepFwdFrame: 'Preview: sličica naprej',
+  stepBackSec: 'Preview: sekunda nazaj', stepFwdSec: 'Preview: sekunda naprej',
+  panic: 'PANIKA (vklop/izklop)', pause: 'Program: predvajaj/ustavi', fadeclear: 'Program: zatemni',
+};
+
+function runHotkey(cmd) {
+  const step = { stepBackFrame: '-1f', stepFwdFrame: '+1f', stepBackSec: '-1s', stepFwdSec: '+1s' };
+  if (cmd === 'cut' || cmd === 'auto') {
+    if (previewMode()) run(`take.${cmd}`);
+    else directSelected(cmd);
+  } else if (cmd === 'next' || cmd === 'prev') stepPreview(cmd === 'next' ? 1 : -1);
+  else if (step[cmd]) stepBy('preview', step[cmd]);
+  else if (cmd === 'panic') run('program.panic', { on: !(state && state.panic) });
+  else if (cmd === 'pause') run('playPause', { which: 'program' });
+  else if (cmd === 'fadeclear') run('program.clear', { fade: true });
+  else if (cmd.startsWith('action:')) run('actions.run', { id: cmd.slice(7) });
+  else if (cmd.startsWith('group:')) run('playlist.cueGroup', { groupId: cmd.slice(6) });
+}
+
+let libSearch = '';
+$('#lib-search').addEventListener('input', (ev) => {
+  libSearch = ev.target.value;
+  renderLibrary();
+});
+$('#lib-search').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') {
+    ev.target.value = '';
+    libSearch = '';
+    renderLibrary();
+    ev.target.blur();
+  } else if (ev.key === 'ArrowDown' || ev.key === 'Enter') {
+    ev.target.blur(); // puščice/Enter naprej delujejo na seznamu
+  }
+});
+
+// Ko se katerokoli okno zapre, fokus ne sme ostati na skritem polju (sicer bližnjice ne delujejo).
+for (const d of document.querySelectorAll('dialog')) {
+  d.addEventListener('close', () => {
+    // Brskalnik po zaprtju vrne fokus na gumb, ki je okno odprl; Enter/preslednica bi ga znova pritisnila.
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (a && a !== document.body && !['INPUT', 'TEXTAREA'].includes(a.tagName)) a.blur();
+    }, 0);
+  });
+}
+
+// Višina monitorjev: povleci ločnico, zapomni si
+const MON_H_KEY = 'playout.monH';
+function setMonH(vh) {
+  if (vh == null) document.documentElement.style.removeProperty('--mon-h');
+  else document.documentElement.style.setProperty('--mon-h', `${vh}vh`);
+}
+setMonH(Number(lsGet(MON_H_KEY, '')) || null);
+(() => {
+  const sp = $('#splitter');
+  let start = null;
+  sp.addEventListener('pointerdown', (ev) => {
+    const scr = document.querySelector('.monitor:not(.hidden) .mon-screen') || document.querySelector('.mon-screen');
+    const h = scr ? scr.getBoundingClientRect().height : window.innerHeight * 0.42;
+    start = { y: ev.clientY, vh: (h / window.innerHeight) * 100 };
+    sp.setPointerCapture(ev.pointerId);
+    sp.classList.add('drag');
+    document.body.classList.add('resizing');
+  });
+  sp.addEventListener('pointermove', (ev) => {
+    if (!start) return;
+    const vh = Math.max(12, Math.min(70, start.vh + ((ev.clientY - start.y) / window.innerHeight) * 100));
+    setMonH(Math.round(vh * 10) / 10);
+  });
+  const end = () => {
+    if (!start) return;
+    start = null;
+    sp.classList.remove('drag');
+    document.body.classList.remove('resizing');
+    const v = document.documentElement.style.getPropertyValue('--mon-h');
+    lsSet(MON_H_KEY, v ? String(parseFloat(v)) : '');
+  };
+  sp.addEventListener('pointerup', end);
+  sp.addEventListener('pointercancel', end);
+  sp.addEventListener('dblclick', () => {
+    setMonH(null);
+    lsSet(MON_H_KEY, '');
+  });
+})();
+
+let hotkeyCapture = null; // ukaz, ki mu ravno nastavljamo tipko
+
 document.addEventListener('keydown', (ev) => {
+  if (hotkeyCapture) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.code === 'Escape') {
+      hotkeyCapture = null;
+      renderHotkeys();
+      return;
+    }
+    const acc = accOf(ev);
+    if (!acc) return; // samo modifikator, čakamo na tipko
+    const hk = { ...state.settings.hotkeys };
+    for (const [k, v] of Object.entries(hk)) if (v === acc) hk[k] = ''; // ena tipka = en ukaz
+    hk[hotkeyCapture] = acc;
+    hotkeyCapture = null;
+    settingsPatch({ hotkeys: hk }).then(() => renderHotkeys());
+    return;
+  }
   if (document.querySelector('dialog[open]:modal')) return;
   if (ev.target && ev.target.closest && ev.target.closest('#dlg-entry') && ev.key !== 'Enter' && ev.key !== ' ') return;
   const tag = (ev.target && ev.target.tagName) || '';
-  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
-  if (ev.key === 'Enter') {
-    ev.preventDefault();
-    if (previewMode()) run('take.cut');
-    else directSelected('cut');
-  } else if (ev.key === ' ') {
-    ev.preventDefault();
-    if (previewMode()) run('take.auto');
-    else directSelected('auto');
-  } else if (ev.code === 'Comma' || ev.code === 'Period') {
-    // , in . = sličica nazaj/naprej v preview (s Shift: sekunda)
-    ev.preventDefault();
-    stepBy('preview', `${ev.code === 'Comma' ? '-' : '+'}1${ev.shiftKey ? 's' : 'f'}`);
-  } else if (ev.key === 'ArrowDown') {
-    ev.preventDefault();
-    stepPreview(1);
-  } else if (ev.key === 'ArrowUp') {
-    ev.preventDefault();
-    stepPreview(-1);
+  const inClosedDlg = ev.target && ev.target.closest && ev.target.closest('dialog:not([open])');
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag) && !inClosedDlg) return;
+  if (!state) return;
+  const acc = accOf(ev);
+  if (!acc) return;
+  const hit = Object.entries(state.settings.hotkeys || {}).find(([, v]) => v === acc);
+  if (!hit) return;
+  ev.preventDefault();
+  runHotkey(hit[0]);
+}, true);
+
+function renderHotkeys() {
+  const box = $('#hotkey-list');
+  if (!box || !state) return;
+  const hk = state.settings.hotkeys || {};
+  const rows = Object.keys(HOTKEY_LABEL).map((k) => [k, HOTKEY_LABEL[k]]);
+  for (const a of (state.actions && state.actions.actions) || []) rows.push([`action:${a.id}`, `Akcija: ${a.name}`]);
+  for (const g of state.playlist) rows.push([`group:${g.id}`, `Skupina v preview: ${g.name}`]);
+  box.innerHTML = '';
+  for (const [cmd, label] of rows) {
+    const row = el('div', 'hk-row');
+    const b = el('button', 'btn ghost small hk-key' + (hotkeyCapture === cmd ? ' capture' : ''), hotkeyCapture === cmd ? 'pritisni tipko … (Esc)' : accLabel(hk[cmd]) || '—');
+    b.type = 'button';
+    b.onclick = () => {
+      hotkeyCapture = cmd;
+      renderHotkeys();
+    };
+    const x = el('button', 'btn ghost small', '✕');
+    x.type = 'button';
+    x.title = 'Brez tipke';
+    x.onclick = () => settingsPatch({ hotkeys: { ...hk, [cmd]: '' } }).then(() => renderHotkeys());
+    row.append(el('span', 'hk-label', label), b, x);
+    box.append(row);
   }
-});
+  $('#set-global-hotkeys').checked = !!state.settings.globalHotkeys;
+  $('#api-url').textContent = `${location.origin}/api/cut`;
+}
+$('#set-global-hotkeys').onchange = (e) => settingsPatch({ globalHotkeys: e.target.checked });
+$('#btn-hotkeys-reset').onclick = () => settingsPatch({ hotkeys: null }).then(() => renderHotkeys());
 
 // Povleci in spusti datoteke.
 const libPanel = $('.library');
@@ -1444,7 +1624,8 @@ $('#btn-settings').onclick = async () => {
   const devices = await loadAudioDevices();
   if (devices.length) await run('audio.devices', { devices });
   fillSettings();
-  const info = await run('app.info');
+  renderHotkeys();
+  const info = isDesktop ? await run('app.info') : null;
   if (info) {
     $('#about').textContent =
       `Playout ${info.version}\nMotor: ${state.engine.version ? 'CasparCG ' + state.engine.version : '—'}\n` +

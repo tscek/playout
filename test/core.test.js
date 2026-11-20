@@ -732,3 +732,52 @@ test('fade na začetku in koncu vnosa', async () => {
     await engine.stop();
   }
 });
+
+test('bližnjice in HTTP vmesnik (Stream Deck / Companion)', async () => {
+  const http = require('http');
+  const { createServer } = require('../main/server');
+  const { ctl, engine, dir } = makeController();
+  let srv;
+  try {
+    const a = path.join(dir, 'a.mp4');
+    fs.writeFileSync(a, 'x');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([a]);
+    const g = ctl.playlist.groups[0];
+    await ctl.addToGroup(g.id, [ctl.library.items[0].id, ctl.library.items[0].id]);
+    assert.strictEqual(ctl.settings.hotkeys.cut, 'Enter');
+    await ctl.updateSettings({ hotkeys: { panic: 'F12' } });
+    assert.strictEqual(ctl.settings.hotkeys.panic, 'F12');
+    assert.strictEqual(ctl.settings.hotkeys.auto, 'Space');
+    srv = await createServer({ controller: ctl, uiDir: path.join(__dirname, '..', 'ui'), port: 0 });
+    const get = (p) => new Promise((resolve, reject) => {
+      http.get(`http://127.0.0.1:${srv.port}${p}`, (res) => {
+        let b = '';
+        res.on('data', (d) => { b += d; });
+        res.on('end', () => resolve({ code: res.statusCode, body: JSON.parse(b) }));
+      }).on('error', reject);
+    });
+    let r = await get('/api/next');
+    assert.strictEqual(r.code, 200);
+    assert.strictEqual(ctl.preview.src.entryId, g.items[0].id);
+    r = await get('/api/next');
+    assert.strictEqual(ctl.preview.src.entryId, g.items[1].id);
+    r = await get('/api/cut');
+    assert.ok(ctl.program.item);
+    r = await get(`/api/group/${encodeURIComponent(g.name)}`);
+    assert.strictEqual(r.code, 200);
+    assert.strictEqual(ctl.preview.src.entryId, g.items[0].id);
+    r = await get('/api/panic');
+    assert.strictEqual(ctl.panic, true);
+    r = await get('/api/state');
+    assert.strictEqual(r.body.panic, true);
+    assert.strictEqual(r.body.program, 'a.mp4');
+    r = await get('/api/action/Ne obstaja');
+    assert.strictEqual(r.code, 400);
+  } finally {
+    if (srv) srv.server.close();
+    for (const c of srv ? srv.wss.clients : []) c.terminate();
+    await engine.stop();
+  }
+});
