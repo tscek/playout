@@ -476,6 +476,14 @@ function entryEditor(e, g) {
       const l = el('span', 'group-opt');
       l.append(document.createTextNode(`${label} ${e[key] ? fmtTime(e[key]) + '.' + String(Math.round((e[key] % 1) * 100)).padStart(2, '0') : '—'}`));
       if (e[key]) {
+        const media = state.library.find((m) => m.id === e.mediaId);
+        const fps = (media && media.fps) || channelFps();
+        for (const [txt, d] of [['−1s', -1], ['−1f', -1 / fps], ['+1f', 1 / fps], ['+1s', 1]]) {
+          const b = el('button', 'item-btn', txt);
+          b.title = `Premakni ${label} točko za ${txt.replace('f', ' sličico').replace('s', ' sekundo')}`;
+          b.onclick = () => set({ [key]: Math.max(0, Math.round((e[key] + d) * 1000) / 1000) });
+          l.append(b);
+        }
         const x = el('button', 'item-btn', '✕');
         x.title = `Pobriši ${label} točko`;
         x.onclick = () => set({ [key]: null });
@@ -513,17 +521,36 @@ function fmtTime(sec) {
   return (h ? `${h}:` : '') + `${pad(m)}:${pad(s % 60)}`;
 }
 
+let clockSkew = 0; // razlika med uro aplikacije in tega zaslona
+
+/** Preostali čas slike s trajanjem (na programu). */
+function imageLeft(item) {
+  if (!item || item.type !== 'image' || !item.seconds || !item.startedAt) return null;
+  const now = item.paused ? item.pausedAt : Date.now() + clockSkew;
+  return item.seconds - (now - item.startedAt) / 1000;
+}
+
 function timeText(item, t) {
   if (!item) return ['', ''];
-  if (item.type === 'image') return ['slika', ''];
+  if (item.type === 'image') {
+    const left = imageLeft(item);
+    if (left === null) return [item.seconds ? `slika · ${item.seconds} s` : 'slika', ''];
+    const cls = left <= 0.5 ? 'time-end' : left <= 10 ? 'time-warn' : '';
+    return [`−${fmtTime(Math.ceil(Math.max(0, left)))}  (${fmtTime(item.seconds)})${item.paused ? '  ❚❚' : ''}`, cls];
+  }
   if (!t || !t.total) return ['', ''];
   const end = item.outSec || t.total;
   const start = item.inSec || 0;
   if (item.loop) return [`zanka · ${fmtTime(t.elapsed - start)} / ${fmtTime(end - start)}`, ''];
   const left = end - t.elapsed;
   const cls = left <= 0.5 ? 'time-end' : left <= 10 ? 'time-warn' : '';
-  return [`−${fmtTime(Math.ceil(left))}  (${fmtTime(end - start)})`, cls];
+  return [`−${fmtTime(Math.ceil(left))}  (${fmtTime(end - start)})${item.paused ? '  ❚❚' : ''}`, cls];
 }
+
+const channelFps = () => {
+  const m = state && /^\d+[pi](\d{2})(\d{2})$/.exec(state.settings.videoMode);
+  return m ? parseInt(m[1], 10) + parseInt(m[2], 10) / 100 : 25;
+};
 
 function renderMonitors() {
   const pvw = state.preview;
@@ -576,6 +603,42 @@ function renderMonCtl(prefix, item, t) {
   vol.disabled = !item || item.type === 'image';
   if (!vol.dragging) vol.value = item ? item.volumeDb || 0 : 0;
   $(`#${prefix}-vol-val`).textContent = item && item.type !== 'image' ? fmtDb(Number(vol.value)) : '';
+  const mute = $(`#${prefix}-mute`);
+  mute.disabled = !item || item.type === 'image';
+  mute.classList.toggle('muted', !!(item && item.muted));
+  mute.textContent = item && item.muted ? '🔇' : '🔊';
+  mute.title = item && item.muted ? 'Posnetek je utišan: klikni za vklop zvoka' : 'Utišaj ta posnetek';
+  // Predvajaj / ustavi in koraki
+  const isVideo = !!(item && item.type !== 'image');
+  const which = prefix === 'pgm' ? 'program' : 'preview';
+  const play = $(`#${which}-play`);
+  const running = which === 'program' ? !!(item && !item.paused) : !!(item && item.playing);
+  play.disabled = !item || (which === 'preview' && !isVideo);
+  play.textContent = running ? '❚❚' : '▶';
+  play.classList.toggle('on', running);
+  play.title = running ? 'Ustavi (pavza)' : 'Predvajaj';
+  for (const b of document.querySelectorAll(`.tbtn[data-which=${which}]`)) b.disabled = !canSeek;
+  if (prefix === 'pvw') renderFitPanel(item);
+}
+
+/** Plošča za prileganje slike v preview. */
+function renderFitPanel(item) {
+  const btn = $('#btn-fit');
+  const ok = !!(item && item.type !== 'audio');
+  btn.disabled = !ok;
+  const changed = ok && (item.fit && item.fit !== 'fit' || item.zoom !== 1 || item.posX || item.posY);
+  btn.classList.toggle('on', !!changed);
+  const panel = $('#fit-panel');
+  if (!ok) panel.classList.add('hidden');
+  if (!ok || panel.classList.contains('hidden')) return;
+  if (document.activeElement !== $('#fit-mode')) $('#fit-mode').value = item.fit || 'fit';
+  for (const [id, v] of [['#fit-zoom', Math.round((item.zoom || 1) * 100)], ['#fit-x', item.posX || 0], ['#fit-y', item.posY || 0]]) {
+    if (!$(id).dragging) $(id).value = v;
+  }
+  $('#fit-zoom-val').textContent = `${$('#fit-zoom').value} %`;
+  const known = item.width && item.height;
+  $('#fit-note').textContent = (known ? `Velikost: ${item.width}×${item.height}. ` : 'Velikosti ni bilo mogoče prebrati, povečava in premik ne delujeta. ')
+    + 'Spremembe vidiš v preview; na programu veljajo ob naslednjem predvajanju.';
 }
 
 function renderTimes() {
@@ -606,7 +669,11 @@ function fillTakeControls() {
   $('#auto-next').checked = !!s.autoNext;
   const mv = $('#master-vol');
   if (!mv.dragging) mv.value = s.masterVolumeDb || 0;
-  $('#master-val').textContent = fmtDb(Number(mv.value));
+  $('#master-val').textContent = s.masterMuted ? 'utišano' : fmtDb(Number(mv.value));
+  const mm = $('#master-mute');
+  mm.classList.toggle('muted', !!s.masterMuted);
+  mm.textContent = s.masterMuted ? '🔇' : '🔊';
+  mm.title = s.masterMuted ? 'Glavni izhod je utišan: klikni za vklop' : 'Utišaj glavni izhod';
   $('#mode-preview').checked = previewMode();
   for (const r of document.querySelectorAll('input[name=direct]')) r.checked = r.value === s.directTake;
 }
@@ -722,10 +789,46 @@ for (const [prefix, which, ch] of [['pvw', 'preview', 2], ['pgm', 'program', 1]]
     if (item) run('media.volume', { id: item.id, db });
   }, () => { $(`#${prefix}-vol-val`).textContent = fmtDb(Number(vol.value)); });
 }
+liveSlider($('#fit-zoom'), (v) => fitPatch({ zoom: v / 100 }), () => { $('#fit-zoom-val').textContent = `${$('#fit-zoom').value} %`; });
+liveSlider($('#fit-x'), (v) => fitPatch({ posX: v }));
+liveSlider($('#fit-y'), (v) => fitPatch({ posY: v }));
 liveSlider($('#master-vol'), (db) => settingsPatch({ masterVolumeDb: db }),
   () => { $('#master-val').textContent = fmtDb(Number($('#master-vol').value)); });
 
 $('#btn-cut').onclick = () => run('take.cut');
+
+// Predvajaj / ustavi, koraki po sličici ali sekundi
+const clipFpsFor = (which) => {
+  const t = times[which === 'program' ? 1 : 2];
+  return (t && t.fps) || channelFps();
+};
+function stepBy(which, spec) {
+  const sign = spec.startsWith('-') ? -1 : 1;
+  const delta = spec.endsWith('f') ? 1 / clipFpsFor(which) : 1;
+  run('step', { which, delta: sign * delta });
+}
+for (const b of document.querySelectorAll('.tbtn[data-step]')) b.onclick = () => stepBy(b.dataset.which, b.dataset.step);
+$('#preview-play').onclick = () => run('playPause', { which: 'preview' });
+$('#program-play').onclick = () => run('playPause', { which: 'program' });
+for (const [prefix, which] of [['pvw', 'preview'], ['pgm', 'program']]) {
+  $(`#${prefix}-mute`).onclick = () => {
+    const item = state && state[which];
+    if (item) run('media.mute', { id: item.id, muted: !item.muted });
+  };
+}
+$('#master-mute').onclick = () => settingsPatch({ masterMuted: !(state && state.settings.masterMuted) });
+
+// Prileganje
+$('#btn-fit').onclick = () => {
+  $('#fit-panel').classList.toggle('hidden');
+  render();
+};
+const fitPatch = (patch) => {
+  const item = state && state.preview;
+  if (item) run('media.transform', { id: item.id, patch });
+};
+$('#fit-mode').onchange = (e) => fitPatch({ fit: e.target.value });
+$('#fit-reset').onclick = () => fitPatch({ reset: true });
 for (const k of ['in', 'out']) {
   const b = $(`#btn-mark-${k}`);
   b.onclick = () => run('preview.mark', { which: k });
@@ -777,6 +880,10 @@ document.addEventListener('keydown', (ev) => {
     ev.preventDefault();
     if (previewMode()) run('take.auto');
     else directSelected('auto');
+  } else if (ev.code === 'Comma' || ev.code === 'Period') {
+    // , in . = sličica nazaj/naprej v preview (s Shift: sekunda)
+    ev.preventDefault();
+    stepBy('preview', `${ev.code === 'Comma' ? '-' : '+'}1${ev.shiftKey ? 's' : 'f'}`);
   } else if (ev.key === 'ArrowDown') {
     ev.preventDefault();
     stepPreview(1);
@@ -918,6 +1025,7 @@ $('#btn-engine-restart').onclick = () => {
 
 api.on('state', (s) => {
   state = s;
+  if (s.program && s.program.now) clockSkew = s.program.now - Date.now();
   if (s.times) times = s.times;
   render();
 });
@@ -930,3 +1038,8 @@ api.on('log', (line) => {
 });
 api.on('open', () => $('#conn-banner').classList.add('hidden'));
 api.on('close', () => $('#conn-banner').classList.remove('hidden'));
+
+// Odštevanje za slike na programu (motor zanje ne pošilja časa).
+setInterval(() => {
+  if (state && state.program && state.program.type === 'image') renderTimes();
+}, 250);

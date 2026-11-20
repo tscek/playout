@@ -31,9 +31,32 @@
         <div class="mon-screen"><img id="pvw-img" alt=""><div class="mon-empty" id="pvw-empty">prazno</div></div>
         <div class="mon-ctl">
           <span class="scrub-wrap"><input type="range" class="scrub" id="pvw-scrub" min="0" max="1000" value="0" title="Začetna točka: od kod se posnetek začne ob preklopu"></span>
+        </div>
+        <div class="mon-ctl">
+          <span class="transport">
+            <button class="tbtn" data-step="-1s" data-which="preview" title="1 sekunda nazaj">−1s</button>
+            <button class="tbtn" data-step="-1f" data-which="preview" title="1 sličica nazaj">−1f</button>
+            <button class="tbtn play" id="preview-play" title="Predvajaj / ustavi">▶</button>
+            <button class="tbtn" data-step="+1f" data-which="preview" title="1 sličica naprej">+1f</button>
+            <button class="tbtn" data-step="+1s" data-which="preview" title="1 sekunda naprej">+1s</button>
+          </span>
           <button class="btn ghost small mark" id="btn-mark-in">IN</button>
           <button class="btn ghost small mark" id="btn-mark-out">OUT</button>
-          <label class="vol" title="Jakost tega posnetka (shrani se k posnetku)">🔊 <input type="range" id="pvw-vol" min="-40" max="10" step="0.5"><span id="pvw-vol-val"></span></label>
+          <button class="btn ghost small mark" id="btn-fit" title="Prileganje slike: razmerje, povečava, premik">▣ Slika</button>
+          <span class="spacer"></span>
+          <span class="vol"><button class="tbtn spk" id="pvw-mute" title="Utišaj ta posnetek">🔊</button><input type="range" id="pvw-vol" min="-40" max="10" step="0.5" title="Jakost tega posnetka (shrani se k posnetku)"><span id="pvw-vol-val"></span></span>
+        </div>
+        <div class="fit-panel hidden" id="fit-panel">
+          <label class="act-field">Prileganje <select id="fit-mode" class="mini-select">
+            <option value="fit">Ohrani razmerje (cela slika)</option>
+            <option value="fill">Zapolni (obreži robove)</option>
+            <option value="stretch">Raztegni</option>
+          </select></label>
+          <label class="act-field">Povečava <input type="range" id="fit-zoom" min="10" max="400" step="1"><span id="fit-zoom-val"></span></label>
+          <label class="act-field">Levo/desno <input type="range" id="fit-x" min="-100" max="100" step="0.5"></label>
+          <label class="act-field">Gor/dol <input type="range" id="fit-y" min="-100" max="100" step="0.5"></label>
+          <button type="button" class="btn ghost small" id="fit-reset">Ponastavi</button>
+          <small class="fit-note" id="fit-note"></small>
         </div>
         <div class="mon-foot"><span id="pvw-time"></span><button class="btn ghost small" id="btn-pvw-clear">Počisti</button></div>
       </div>
@@ -51,9 +74,9 @@
           <select id="tr-dir"></select>
         </label>
         <label class="mini check"><input type="checkbox" id="auto-next"> Po preklopu naloži naslednjega</label>
-        <label class="mini master" title="Glavna jakost programa">Glavna jakost <span id="master-val"></span>
+        <div class="mini master" title="Glavna jakost programa"><span><button class="tbtn spk" id="master-mute" title="Utišaj glavni izhod">🔊</button> Glavna jakost <span id="master-val"></span></span>
           <input type="range" id="master-vol" min="-40" max="10" step="0.5">
-        </label>
+        </div>
         <div class="direct hidden" id="direct-panel">
           <div class="mini">Klik na posnetek:</div>
           <label class="mini check"><input type="radio" name="direct" value="cut"> takoj (CUT)</label>
@@ -66,7 +89,17 @@
         <div class="mon-screen"><img id="pgm-img" alt=""><div class="mon-empty" id="pgm-empty">prazno</div></div>
         <div class="mon-ctl">
           <span class="scrub-wrap"><input type="range" class="scrub" id="pgm-scrub" min="0" max="1000" value="0" title="Premik po posnetku na programu (takoj na izhodu)"></span>
-          <label class="vol" title="Jakost tega posnetka (shrani se k posnetku, spremeni se takoj)">🔊 <input type="range" id="pgm-vol" min="-40" max="10" step="0.5"><span id="pgm-vol-val"></span></label>
+        </div>
+        <div class="mon-ctl">
+          <span class="transport">
+            <button class="tbtn" data-step="-1s" data-which="program" title="1 sekunda nazaj">−1s</button>
+            <button class="tbtn" data-step="-1f" data-which="program" title="1 sličica nazaj">−1f</button>
+            <button class="tbtn play" id="program-play" title="Predvajaj / ustavi">▶</button>
+            <button class="tbtn" data-step="+1f" data-which="program" title="1 sličica naprej">+1f</button>
+            <button class="tbtn" data-step="+1s" data-which="program" title="1 sekunda naprej">+1s</button>
+          </span>
+          <span class="spacer"></span>
+          <span class="vol"><button class="tbtn spk" id="pgm-mute" title="Utišaj ta posnetek">🔊</button><input type="range" id="pgm-vol" min="-40" max="10" step="0.5" title="Jakost tega posnetka (shrani se k posnetku, spremeni se takoj)"><span id="pgm-vol-val"></span></span>
         </div>
         <div class="mon-foot">
           <span id="pgm-time"></span>

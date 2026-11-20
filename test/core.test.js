@@ -482,3 +482,23 @@ test('akcije: XR18 OSC, HTTP, splošen OSC, sprožitev ob začetku in koncu vnos
     srv.close();
   }
 });
+
+test('prileganje: filter za razmerje, povečavo in premik; velikost iz glave datoteke', () => {
+  const { imageSize } = require('../main/probe');
+  const png = Buffer.alloc(32);
+  png.writeUInt32BE(0x89504e47, 0);
+  png.writeUInt32BE(480, 16);
+  png.writeUInt32BE(640, 20);
+  assert.deepStrictEqual(imageSize(png), { width: 480, height: 640 });
+
+  const { ctl } = makeController();
+  const f = (it) => ctl._fitFilter({ type: 'video', ...it });
+  assert.strictEqual(f({ width: 1920, height: 1080 }), null);
+  assert.strictEqual(f({ width: 1280, height: 720 }), null);
+  assert.strictEqual(f({ width: 640, height: 480, fit: 'stretch' }), null);
+  assert.strictEqual(f({}), null); // neznana velikost in privzeto
+  assert.strictEqual(f({ width: 640, height: 480 }), 'scale=1440:1080,pad=1920:1080:240:0:color=black@0,setsar=1');
+  assert.strictEqual(f({ width: 640, height: 480, fit: 'fill' }), 'scale=1920:1440,crop=1920:1080:0:180,pad=1920:1080:0:0:color=black@0,setsar=1');
+  assert.strictEqual(f({ width: 1920, height: 1080, zoom: 0.5, posX: 25 }), 'scale=960:540,pad=1920:1080:960:270:color=black@0,setsar=1');
+  assert.match(f({ width: 1920, height: 1080, zoom: 2 }), /^scale=3840:2160,crop=1920:1080:960:540,pad=1920:1080:0:0/);
+});

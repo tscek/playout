@@ -18,7 +18,7 @@ function optSeconds(v, min = 0) {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   if (!Number.isFinite(n) || n < min) return null;
-  return Math.round(n * 100) / 100;
+  return Math.round(n * 1000) / 1000;
 }
 
 function normEntry(e) {

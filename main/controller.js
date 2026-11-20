@@ -11,6 +11,7 @@ const { quote, mediaPath } = require('./engine/amcp');
 const { VIDEO_MODES } = require('./engine/caspar-config');
 const { describeDisplay } = require('./engine/displays');
 const { Playlist } = require('./playlist');
+const { probeSize } = require('./probe');
 
 const PROGRAM_CHANNEL = 1;
 const PREVIEW_CHANNEL = 2;
@@ -39,6 +40,7 @@ const DEFAULT_SETTINGS = {
   programOutput: 'auto', // 'auto' = prvi zaslon, ki ni glavni; 'test' = okno; sicer ime zaslona (npr. \\.\DISPLAY2)
   audioDevice: '', // '' = privzeta naprava sistema
   masterVolumeDb: 0, // glavni fader programa v dB
+  masterMuted: false,
   panicSource: '', // '' = črno, sicer id posnetka (logo) iz knjižnice
   audioDelayFrames: 0, // zvok kasneje za toliko sličic (zakasnitev slike v CasparCG ne deluje, ko ima zaslon več Hz kot kanal)
 };
@@ -71,6 +73,7 @@ class Controller extends EventEmitter {
     this.settingsFile = path.join(dataDir, 'settings.json');
     this.libraryFile = path.join(dataDir, 'library.json');
     this.playlistFile = path.join(dataDir, 'playlist.json');
+    this.stillDir = path.join(dataDir, 'stills'); // kopije slik za predvajanje s prileganjem
 
     const saved = readJson(this.settingsFile, {});
     if (!saved.settingsVersion && saved.programOutput === 'test') saved.programOutput = 'auto'; // v0.1.0 je imel privzeto testno okno
@@ -88,7 +91,8 @@ class Controller extends EventEmitter {
     this.panic = false;
     this._lastPgmPath = null;
     this._cueGen = 0;
-    this.times = { 1: null, 2: null }; // { elapsed, total } iz OSC
+    this.times = { 1: null, 2: null }; // { elapsed, total, fps } iz OSC
+    this.clipFps = { 1: 0, 2: 0 }; // sličice na sekundo posnetka (iz OSC)
     this._timeEmitAt = 0;
     this.lastError = '';
     this.displaysError = '';
@@ -130,11 +134,14 @@ class Controller extends EventEmitter {
       library: this.library.items.map((it) => ({ ...it, missing: !fileExists(it.path) })),
       program: this.program.item
         ? { id: this.program.item.id, name: this.program.item.name, type: this.program.item.type, loop: !!this.program.item.loop,
-          volumeDb: this.program.item.volumeDb || 0, ...this._specState(this.program.item, this.program.src), startedAt: this.program.startedAt, src: this.program.src }
+          volumeDb: this.program.item.volumeDb || 0, muted: !!this.program.item.muted, ...this._specState(this.program.item, this.program.src),
+          paused: !!this.program.paused, pausedAt: this.program.pausedAt || 0, now: Date.now(), startedAt: this.program.startedAt, src: this.program.src }
         : null,
       preview: this.preview.item
         ? { id: this.preview.item.id, name: this.preview.item.name, type: this.preview.item.type, loop: !!this.preview.item.loop,
-          volumeDb: this.preview.item.volumeDb || 0, ...this._specState(this.preview.item, this.preview.src), src: this.preview.src, autoFollow: this.autoCuedId ? 'end' : this.imageTimer ? 'timer' : null }
+          volumeDb: this.preview.item.volumeDb || 0, muted: !!this.preview.item.muted, ...this._specState(this.preview.item, this.preview.src),
+          playing: !!this.preview.playing, fit: this.preview.item.fit || 'fit', zoom: this.preview.item.zoom || 1,
+          posX: this.preview.item.posX || 0, posY: this.preview.item.posY || 0, width: this.preview.item.width || 0, height: this.preview.item.height || 0, src: this.preview.src, autoFollow: this.autoCuedId ? 'end' : this.imageTimer ? 'timer' : null }
         : null,
       playlist: this.playlist.groups.map((g) => ({
         ...g,
@@ -248,7 +255,7 @@ class Controller extends EventEmitter {
 
   async updateSettings(patch) {
     const allowed = ['videoMode', 'programOutput', 'audioDevice', 'audioDelayFrames'];
-    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb'];
+    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb', 'masterMuted'];
     const next = { ...this.settings };
     for (const k of [...allowed, ...operational]) if (k in patch) next[k] = patch[k];
     if (!TRANSITIONS[next.transitionType]) next.transitionType = 'MIX';
@@ -262,7 +269,8 @@ class Controller extends EventEmitter {
     if (next.audioDevice !== this.settings.audioDevice) this.audioWarning = '';
     if (typeof next.panicSource !== 'string') next.panicSource = '';
     next.masterVolumeDb = clampDb(next.masterVolumeDb, 0);
-    const masterChanged = next.masterVolumeDb !== this.settings.masterVolumeDb;
+    next.masterMuted = !!next.masterMuted;
+    const masterChanged = next.masterVolumeDb !== this.settings.masterVolumeDb || next.masterMuted !== this.settings.masterMuted;
     const panicChanged = next.panicSource !== this.settings.panicSource;
     const transitionChanged = ['transitionType', 'transitionFrames', 'transitionDirection'].some((k) => next[k] !== this.settings[k]);
 
@@ -293,12 +301,60 @@ class Controller extends EventEmitter {
     for (const f of files) {
       const item = makeItem(f);
       if (item) {
+        this._probe(item);
         this.library.items.push(item);
         added++;
       }
     }
     this._saveLibrary();
     return added;
+  }
+
+  /** Prebere velikost slike/videa (za prileganje). */
+  _probe(item) {
+    if (item.type === 'audio') return;
+    const d = probeSize(item.path, item.type);
+    if (d && d.width > 0 && d.height > 0) {
+      item.width = d.width;
+      item.height = d.height;
+    }
+  }
+
+  /** Prileganje medija: fit ('fit' | 'fill' | 'stretch'), zoom (1 = 100 %), posX/posY (% slike). */
+  async setTransform(id, patch) {
+    const it = this._item(id);
+    const p = patch || {};
+    if ('fit' in p) it.fit = ['fit', 'fill', 'stretch'].includes(p.fit) ? p.fit : 'fit';
+    if ('zoom' in p) it.zoom = Math.max(0.1, Math.min(5, Number(p.zoom) || 1));
+    if ('posX' in p) it.posX = Math.max(-100, Math.min(100, Number(p.posX) || 0));
+    if ('posY' in p) it.posY = Math.max(-100, Math.min(100, Number(p.posY) || 0));
+    if (p.reset) {
+      it.fit = 'fit';
+      it.zoom = 1;
+      it.posX = 0;
+      it.posY = 0;
+    }
+    if (!it.width && it.type !== 'audio') this._probe(it);
+    for (const slot of [this.preview, this.program]) {
+      if (slot.item && slot.item.id === id) Object.assign(slot.item, { fit: it.fit, zoom: it.zoom, posX: it.posX, posY: it.posY, width: it.width, height: it.height });
+    }
+    this._saveLibrary();
+    // Preview se pripravi znova (program dobi spremembo ob naslednjem predvajanju).
+    if (this.preview.item && this.preview.item.id === id && this.engine.status === 'running') {
+      this.preview.seek = this._previewPosFrames();
+      await this._cue();
+    }
+  }
+
+  /** Mute posnetka (shrani se k posnetku). */
+  async setItemMuted(id, muted) {
+    const it = this._item(id);
+    it.muted = !!muted;
+    for (const slot of [this.program, this.preview]) if (slot.item && slot.item.id === id) slot.item.muted = it.muted;
+    this._saveLibrary();
+    if (this.program.item && this.program.item.id === id && this.engine.status === 'running') {
+      await this._applyItemVolume(this.program.item, 0);
+    }
   }
 
   removeItem(id) {
@@ -413,7 +469,7 @@ class Controller extends EventEmitter {
     const v = this.preview;
     if (!v.item || v.item.type === 'image') this._error('V preview ni videa ali zvoka');
     const t = this.times[PREVIEW_CHANNEL];
-    const pos = t ? Math.round(t.elapsed * 100) / 100 : (v.seek || 0) / fpsOf(this.settings.videoMode);
+    const pos = t ? Math.round(t.elapsed * 1000) / 1000 : (v.seek || 0) / fpsOf(this.settings.videoMode);
     const key = which === 'out' ? 'outSec' : 'inSec';
     const value = clear ? null : pos;
     const spec = this._spec(v.item, v.src);
@@ -428,7 +484,8 @@ class Controller extends EventEmitter {
       v.item[key] = value;
       writeJson(this.libraryFile, this.library);
     }
-    if (key === 'inSec') v.seek = clear ? 0 : Math.round(pos * fpsOf(this.settings.videoMode));
+    // Playhead ostane, kjer je.
+    v.seek = Math.round(pos * fpsOf(this.settings.videoMode));
     this._changed();
     if (this.engine.status === 'running') await this._cue();
   }
@@ -557,9 +614,77 @@ class Controller extends EventEmitter {
     return `${t} ${dur} LINEAR${dir}`;
   }
 
-  /** Parametri posnetka za AMCP: pot, LOOP, SEEK (sličice od začetka datoteke), IN/OUT točki. */
+  /**
+   * ffmpeg filter za prileganje na 1920x1080 (ohrani razmerje, povečava, premik).
+   * null = ni potreben (16:9 brez sprememb ali raztegni brez sprememb), takrat motor sam raztegne na kanal.
+   */
+  _fitFilter(item) {
+    if (item.type === 'audio') return null;
+    const W = 1920;
+    const H = 1080;
+    const fit = item.fit || 'fit';
+    const z = Number(item.zoom) || 1;
+    const px = Number(item.posX) || 0;
+    const py = Number(item.posY) || 0;
+    const plain = z === 1 && !px && !py;
+    const w = item.width;
+    const h = item.height;
+    if (plain && fit === 'stretch') return null;
+    if (!w || !h) {
+      // Velikost ni znana (redek format): privzeto pustimo motorju, sicer prileganje opravi ffmpeg sam
+      // (povečava in premik takrat nista mogoča).
+      if (!item.fit) return null;
+      if (fit === 'fill') return `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1`;
+      if (fit === 'fit') return `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:-1:-1:color=black@0,setsar=1`;
+      return null;
+    }
+    if (plain && Math.abs(w / h - W / H) < 0.01) return null;
+    const even = (v) => Math.max(2, Math.round(v / 2) * 2);
+    let sw;
+    let sh;
+    if (fit === 'stretch') {
+      sw = even(W * z);
+      sh = even(H * z);
+    } else {
+      const k = (fit === 'fill' ? Math.max(W / w, H / h) : Math.min(W / w, H / h)) * z;
+      sw = even(w * k);
+      sh = even(h * k);
+    }
+    const left = Math.round(((W - sw) / 2 + (px / 100) * W) / 2) * 2;
+    const top = Math.round(((H - sh) / 2 + (py / 100) * H) / 2) * 2;
+    const cx = Math.max(0, -left);
+    const cy = Math.max(0, -top);
+    const vw = Math.min(sw - cx, W - Math.max(0, left));
+    const vh = Math.min(sh - cy, H - Math.max(0, top));
+    if (vw < 2 || vh < 2) return `scale=2:2,pad=${W}:${H}:0:0:color=black@0,setsar=1`; // povsem izven slike
+    let f = `scale=${sw}:${sh}`;
+    if (cx || cy || vw < sw || vh < sh) f += `,crop=${even(vw - 1)}:${even(vh - 1)}:${cx}:${cy}`;
+    f += `,pad=${W}:${H}:${Math.max(0, left)}:${Math.max(0, top)}:color=black@0,setsar=1`;
+    return f;
+  }
+
+  /** Pot, ki jo dobi motor. Slika s prileganjem gre skozi ffmpeg (kopija s končnico .still). */
+  _playPath(item) {
+    if (item.type !== 'image' || !this._fitFilter(item)) return item.path;
+    try {
+      const st = fs.statSync(item.path);
+      const file = path.join(this.stillDir, `${item.id}-${Math.round(st.mtimeMs)}.still`);
+      if (!fs.existsSync(file)) {
+        fs.mkdirSync(this.stillDir, { recursive: true });
+        for (const old of fs.readdirSync(this.stillDir)) if (old.startsWith(`${item.id}-`)) fs.rmSync(path.join(this.stillDir, old), { force: true });
+        fs.copyFileSync(item.path, file);
+      }
+      return file;
+    } catch {
+      return item.path;
+    }
+  }
+
+  /** Parametri posnetka za AMCP: pot, LOOP, SEEK (sličice od začetka datoteke), IN/OUT točki, filter za prileganje. */
   _mediaArgs(item, seekFrames = 0, src = null) {
-    let cmd = quote(mediaPath(item.path));
+    let cmd = quote(mediaPath(this._playPath(item)));
+    const vf = this._fitFilter(item);
+    if (vf) cmd += ` VF ${quote(vf)}`;
     if (item.type !== 'image') {
       const spec = this._spec(item, src);
       if (spec.loop) cmd += ' LOOP';
@@ -591,6 +716,7 @@ class Controller extends EventEmitter {
     this._clearImageTimer();
     if (!item) return;
     const gen = ++this._cueGen;
+    this.preview.playing = false;
     const mode = this._autoFollowMode();
     const seek = this.preview.seek || 0;
     const src = this.preview.src;
@@ -620,6 +746,7 @@ class Controller extends EventEmitter {
   }
 
   _startImageTimer() {
+    if (this.program.paused) return; // ob nadaljevanju se nastavi znova
     const secs = this._spec(this.program.item, this.program.src).seconds || 5;
     const wait = Math.max(0, secs * 1000 - (Date.now() - this.program.startedAt));
     const expect = this.preview.src.entryId;
@@ -781,11 +908,19 @@ class Controller extends EventEmitter {
     const spec = this._spec(p.item, p.src);
     if (spec.loop) return; // zanka se ne konča
     this._endPending = { entryId: e.id, actionId: e.endAction, lead: e.endLead || 0 };
-    if (p.item.type === 'image') {
-      if (!spec.seconds) return;
-      const wait = Math.max(0, (spec.seconds - (e.endLead || 0)) * 1000);
-      this._endTimer = setTimeout(() => this._fireEndAction(), wait);
-    }
+    this._scheduleImageEnd();
+  }
+
+  /** Slika nima časa iz motorja: akcijo ob koncu sproži časovnik (upošteva premor). */
+  _scheduleImageEnd() {
+    clearTimeout(this._endTimer);
+    const p = this.program;
+    const pend = this._endPending;
+    if (!pend || !p.item || p.item.type !== 'image' || p.paused) return;
+    const spec = this._spec(p.item, p.src);
+    if (!spec.seconds) return;
+    const wait = Math.max(0, (spec.seconds - pend.lead) * 1000 - (Date.now() - p.startedAt));
+    this._endTimer = setTimeout(() => this._fireEndAction(), wait);
   }
 
   _checkEndAction() {
@@ -824,13 +959,14 @@ class Controller extends EventEmitter {
   // ---------- zvok in premikanje po posnetku ----------
 
   async _applyItemVolume(item, frames = 0) {
-    const g = dbToGain(item.volumeDb);
+    const g = item.muted ? 0 : dbToGain(item.volumeDb);
     const f = Math.max(0, Math.round(Number(frames) || 0));
     await this.engine.send(`MIXER ${PROGRAM_CHANNEL}-${LAYER_MAIN} VOLUME ${g.toFixed(4)}${f ? ` ${f} LINEAR` : ''}`);
   }
 
   async _applyMaster() {
-    await this.engine.send(`MIXER ${PROGRAM_CHANNEL} MASTERVOLUME ${dbToGain(this.settings.masterVolumeDb).toFixed(4)}`);
+    const g = this.settings.masterMuted ? 0 : dbToGain(this.settings.masterVolumeDb);
+    await this.engine.send(`MIXER ${PROGRAM_CHANNEL} MASTERVOLUME ${g.toFixed(4)}`);
   }
 
   /** Jakost posnetka (shrani se k posnetku). Če je na programu, se spremeni takoj. */
@@ -842,6 +978,56 @@ class Controller extends EventEmitter {
     if (this.program.item && this.program.item.id === id && this.engine.status === 'running') {
       await this._applyItemVolume(this.program.item, 0);
     }
+  }
+
+  /** Trenutni položaj preview v sličicah kanala (iz OSC ali zadnjega premika). */
+  _previewPosFrames() {
+    const t = this.times[PREVIEW_CHANNEL];
+    if (t && typeof t.elapsed === 'number' && this.preview.item && this.preview.item.type !== 'image') {
+      return Math.round(t.elapsed * fpsOf(this.settings.videoMode));
+    }
+    return this.preview.seek || 0;
+  }
+
+  /** Premik za delta sekund od trenutnega položaja (koraki po sličici ali sekundi). */
+  async step(which, deltaSec) {
+    const ch = which === 'program' ? PROGRAM_CHANNEL : PREVIEW_CHANNEL;
+    const t = this.times[ch];
+    const fps = fpsOf(this.settings.videoMode);
+    const cur = t ? t.elapsed : (which === 'program' ? 0 : (this.preview.seek || 0) / fps);
+    await this.seek(which, cur + Number(deltaSec || 0));
+  }
+
+  /** Predvajaj / ustavi. which: 'program' | 'preview'; play: true/false (brez = preklopi). */
+  async playPause(which, play) {
+    this._requireEngine();
+    if (which === 'program') {
+      const p = this.program;
+      if (!p.item) this._error('Program je prazen');
+      const want = play === undefined ? !!p.paused : !!play;
+      if (want && p.paused) {
+        await this.engine.send(`RESUME ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
+        p.startedAt += Date.now() - p.pausedAt;
+        p.paused = false;
+        p.pausedAt = 0;
+        if (p.item.type === 'image' && this._autoFollowMode() === 'timer') this._startImageTimer();
+        this._scheduleImageEnd();
+      } else if (!want && !p.paused) {
+        await this.engine.send(`PAUSE ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
+        p.paused = true;
+        p.pausedAt = Date.now();
+        this._clearImageTimer();
+        clearTimeout(this._endTimer);
+      }
+    } else {
+      const v = this.preview;
+      if (!v.item || v.item.type === 'image') this._error('V preview ni videa');
+      const want = play === undefined ? !v.playing : !!play;
+      await this.engine.send(`${want ? 'RESUME' : 'PAUSE'} ${PREVIEW_CHANNEL}-${LAYER_MAIN}`);
+      v.playing = want;
+      if (!want) v.seek = this._previewPosFrames();
+    }
+    this._changed();
   }
 
   /** Premik po posnetku. ch 'program' = takoj na izhodu, 'preview' = začetna točka za naslednji preklop. */
@@ -859,6 +1045,7 @@ class Controller extends EventEmitter {
     if (which === 'program') {
       await this.engine.send(`CALL ${PROGRAM_CHANNEL}-${LAYER_MAIN} SEEK ${frames}`);
       this.program.startedAt = Date.now() - sec * 1000;
+      if (this.program.paused) this.program.pausedAt = Date.now();
     } else {
       this.preview.seek = frames;
       await this._cue();
@@ -886,7 +1073,8 @@ class Controller extends EventEmitter {
       await this.engine.send(`MIXER ${ch} MASTERVOLUME 0`);
       const logo = this.settings.panicSource && this.library.items.find((x) => x.id === this.settings.panicSource);
       if (logo && fs.existsSync(logo.path)) {
-        await this.engine.send(`PLAY ${ch}-${LAYER_PANIC} ${quote(mediaPath(logo.path))}${logo.type === 'image' ? '' : ' LOOP'}`);
+        const vf = this._fitFilter(logo);
+        await this.engine.send(`PLAY ${ch}-${LAYER_PANIC} ${quote(mediaPath(this._playPath(logo)))}${vf ? ` VF ${quote(vf)}` : ''}${logo.type === 'image' ? '' : ' LOOP'}`);
       } else {
         await this.engine.send(`CLEAR ${ch}-${LAYER_PANIC}`);
       }
@@ -942,6 +1130,24 @@ class Controller extends EventEmitter {
   }
 
   _onOsc({ address, args }) {
+    const fm = /^\/channel\/(\d+)\/stage\/layer\/10\/foreground\/file\/streams\/0\/fps$/.exec(address);
+    if (fm) {
+      const fps = args[1] ? args[0] / args[1] : args[0];
+      const c = Number(fm[1]);
+      if (fps > 0 && fps < 200) {
+        this.clipFps[c] = fps;
+        const slot = c === PROGRAM_CHANNEL ? this.program : this.preview;
+        if (slot.item && slot.item.fps !== fps) {
+          slot.item.fps = fps;
+          const it = this.library.items.find((x) => x.id === slot.item.id);
+          if (it && it.fps !== fps) {
+            it.fps = fps;
+            writeJson(this.libraryFile, this.library);
+          }
+        }
+      }
+      return;
+    }
     const m = /^\/channel\/(\d+)\/stage\/layer\/(\d+)\/foreground\/file\/(time|path)$/.exec(address);
     if (!m || Number(m[2]) !== LAYER_MAIN) return;
     const ch = Number(m[1]);
@@ -955,10 +1161,10 @@ class Controller extends EventEmitter {
     const prev = this.times[ch];
     // Isti posnetek dvakrat zapored: pot se ne spremeni, čas pa skoči na začetek.
     if (ch === PROGRAM_CHANNEL && this.autoCuedId && prev && prev.total && prev.elapsed > prev.total - 1.5 && elapsed < 0.5
-      && this.preview.item && this.program.item && samePath(this.preview.item.path, this.program.item.path)) {
+      && this.preview.item && this.program.item && samePath(this._playPath(this.preview.item), this._playPath(this.program.item))) {
       this._autoAdvanced();
     }
-    this.times[ch] = { elapsed, total: typeof total === 'number' ? total : 0 };
+    this.times[ch] = { elapsed, total: typeof total === 'number' ? total : 0, fps: this.clipFps[ch] || 0 };
     if (ch === PROGRAM_CHANNEL && this._endPending) this._checkEndAction();
     const now = Date.now();
     if (now - this._timeEmitAt > 200) {
@@ -973,8 +1179,8 @@ class Controller extends EventEmitter {
     this._lastPgmPath = p;
     const v = this.preview.item;
     if (!this.autoCuedId || !v || v.id !== this.autoCuedId) return;
-    if (this.program.item && samePath(this.program.item.path, p)) return;
-    if (!samePath(v.path, p)) return;
+    if (this.program.item && samePath(this._playPath(this.program.item), p)) return;
+    if (!samePath(this._playPath(v), p)) return;
     this._autoAdvanced();
   }
 
@@ -997,7 +1203,9 @@ class Controller extends EventEmitter {
         seek = ((Date.now() - p.startedAt) / 1000) * fpsOf(this.settings.videoMode);
       }
       p.wallStart = Date.now();
+      if (p.paused) seek = ((p.pausedAt - p.startedAt) / 1000) * fpsOf(this.settings.videoMode);
       await this.engine.send(this._playCommand(p.item, seek, '', p.src));
+      if (p.paused) await this.engine.send(`PAUSE ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
       await this._applyItemVolume(p.item, 0);
     } catch (e) {
       this.lastError = `Obnovitev programa ni uspela: ${e.message}`;

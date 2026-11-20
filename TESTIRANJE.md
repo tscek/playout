@@ -1,6 +1,20 @@
-# Test v0.5.0: akcije (ATEM, XR18), playlist po vnosih, IN/OUT
+# Test v0.6.0: predvajanje, prileganje slike, mute
 
 Namesti novo verzijo čez staro. Nastavitve in seznam medijev ostanejo.
+
+## Novo v 0.6.0
+
+1. **Predvajaj / ustavi**: pod preview in programom je gumb ▶ / ❚❚. V preview lahko posnetek pogledaš, na programu ga ustaviš in nadaljuješ.
+   Ustavljen program ne gre samodejno naprej, dokler ga ne nadaljuješ.
+2. **Koraki**: gumbi −1s, −1f, +1f, +1s premaknejo playhead za sekundo ali sličico (sličica po hitrosti posnetka).
+   Tipki **,** in **.** premikata preview po sličici, s Shift po sekundo.
+3. **IN/OUT**: playhead po označitvi ostane, kjer je. Pri vnosu (⚙) lahko točko še popraviš za sličico ali sekundo.
+4. **Slike s trajanjem** imajo na programu odštevanje kot video (oranžno zadnjih 10 s).
+5. **Zvočnik**: klik na 🔊 pri preview/programu utiša posnetek (shrani se k posnetku), klik na 🔊 pri Glavni jakosti utiša cel izhod.
+6. **Prileganje**: video ali slika, ki ni 16:9, se ne raztegne več, ampak ohrani razmerje (črni robovi).
+   Gumb **▣ Slika** pod preview: *Ohrani razmerje*, *Zapolni* (obreže robove) ali *Raztegni*, povečava in premik levo/desno, gor/dol.
+   Nastavitev se shrani k mediju. Vidiš jo v preview, na programu velja ob naslednjem predvajanju.
+   Preveri, ali je računalnik pri tem bolj obremenjen (pri videih, ki niso 16:9 ali so povečani, sliko preračuna ffmpeg).
 
 ## 0. Akcije (novo v 0.5.0)
 
