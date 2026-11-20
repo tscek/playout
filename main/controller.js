@@ -10,10 +10,13 @@ const { makeItem } = require('./media');
 const { quote, mediaPath } = require('./engine/amcp');
 const { VIDEO_MODES } = require('./engine/caspar-config');
 const { describeDisplay } = require('./engine/displays');
+const { Playlist } = require('./playlist');
 
 const PROGRAM_CHANNEL = 1;
 const PREVIEW_CHANNEL = 2;
 const LAYER_MAIN = 10;
+const LAYER_PANIC_BG = 990; // črna podlaga za paniko
+const LAYER_PANIC = 991; // logo za paniko
 const MONITOR_CONSUMER = 900; // številka "consumerja" za monitor v vmesniku
 
 const TRANSITIONS = {
@@ -35,6 +38,8 @@ const DEFAULT_SETTINGS = {
   videoMode: '1080p5000',
   programOutput: 'auto', // 'auto' = prvi zaslon, ki ni glavni; 'test' = okno; sicer ime zaslona (npr. \\.\DISPLAY2)
   audioDevice: '', // '' = privzeta naprava sistema
+  masterVolumeDb: 0, // glavni fader programa v dB
+  panicSource: '', // '' = črno, sicer id posnetka (logo) iz knjižnice
   audioDelayFrames: 0, // zvok kasneje za toliko sličic (zakasnitev slike v CasparCG ne deluje, ko ima zaslon več Hz kot kanal)
 };
 
@@ -63,6 +68,7 @@ class Controller extends EventEmitter {
 
     this.settingsFile = path.join(dataDir, 'settings.json');
     this.libraryFile = path.join(dataDir, 'library.json');
+    this.playlistFile = path.join(dataDir, 'playlist.json');
 
     const saved = readJson(this.settingsFile, {});
     if (!saved.settingsVersion && saved.programOutput === 'test') saved.programOutput = 'auto'; // v0.1.0 je imel privzeto testno okno
@@ -70,9 +76,15 @@ class Controller extends EventEmitter {
     this.library = readJson(this.libraryFile, { items: [] });
     this.displays = [];
     this.audioDevices = [];
-    this.program = { item: null, startedAt: 0 }; // kaj je na programu
-    this.preview = { item: null }; // kaj je v preview
+    this.playlist = new Playlist(readJson(this.playlistFile, null));
+    // src = { groupId, entryId }, če je posnetek prišel iz playliste
+    this.program = { item: null, startedAt: 0, src: null }; // kaj je na programu
+    this.preview = { item: null, src: null, seek: 0 }; // kaj je v preview
     this.cuedId = null; // posnetek, ki je že naložen v ozadje programa (za takojšen CUT)
+    this.autoCuedId = null; // posnetek v ozadju, ki ga motor sam zažene ob koncu programa
+    this.imageTimer = null; // samodejno nadaljevanje po sliki
+    this.panic = false;
+    this._lastPgmPath = null;
     this.times = { 1: null, 2: null }; // { elapsed, total } iz OSC
     this._timeEmitAt = 0;
     this.lastError = '';
@@ -102,6 +114,7 @@ class Controller extends EventEmitter {
     const fileExists = (p) => {
       try { return fs.existsSync(p); } catch { return false; }
     };
+    const libById = new Map(this.library.items.map((it) => [it.id, it]));
     return {
       engine: this.engine.getStatus(),
       settings: this.settings,
@@ -113,11 +126,21 @@ class Controller extends EventEmitter {
       programOutputResolved: this.resolvedOutput(),
       library: this.library.items.map((it) => ({ ...it, missing: !fileExists(it.path) })),
       program: this.program.item
-        ? { id: this.program.item.id, name: this.program.item.name, type: this.program.item.type, loop: !!this.program.item.loop, startedAt: this.program.startedAt }
+        ? { id: this.program.item.id, name: this.program.item.name, type: this.program.item.type, loop: !!this.program.item.loop,
+          volumeDb: this.program.item.volumeDb || 0, startedAt: this.program.startedAt, src: this.program.src }
         : null,
       preview: this.preview.item
-        ? { id: this.preview.item.id, name: this.preview.item.name, type: this.preview.item.type, loop: !!this.preview.item.loop }
+        ? { id: this.preview.item.id, name: this.preview.item.name, type: this.preview.item.type, loop: !!this.preview.item.loop,
+          volumeDb: this.preview.item.volumeDb || 0, src: this.preview.src, autoFollow: this.autoCuedId ? 'end' : this.imageTimer ? 'timer' : null }
         : null,
+      playlist: this.playlist.groups.map((g) => ({
+        ...g,
+        items: g.items.map((e) => {
+          const it = libById.get(e.mediaId);
+          return { id: e.id, mediaId: e.mediaId, name: it ? it.name : '?', type: it ? it.type : 'video', loop: !!(it && it.loop), missing: !it || !fileExists(it.path) };
+        }),
+      })),
+      panic: this.panic,
       transitions: TRANSITIONS,
       directions: DIRECTIONS,
       times: this.times,
@@ -212,7 +235,7 @@ class Controller extends EventEmitter {
 
   async updateSettings(patch) {
     const allowed = ['videoMode', 'programOutput', 'audioDevice', 'audioDelayFrames'];
-    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext'];
+    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb'];
     const next = { ...this.settings };
     for (const k of [...allowed, ...operational]) if (k in patch) next[k] = patch[k];
     if (!TRANSITIONS[next.transitionType]) next.transitionType = 'MIX';
@@ -224,6 +247,11 @@ class Controller extends EventEmitter {
     if (!VIDEO_MODES[next.videoMode]) this._error('Neznan video način');
     next.audioDelayFrames = Math.max(0, Math.min(25, Math.round(Number(next.audioDelayFrames) || 0)));
     if (next.audioDevice !== this.settings.audioDevice) this.audioWarning = '';
+    if (typeof next.panicSource !== 'string') next.panicSource = '';
+    next.masterVolumeDb = clampDb(next.masterVolumeDb, 0);
+    const masterChanged = next.masterVolumeDb !== this.settings.masterVolumeDb;
+    const panicChanged = next.panicSource !== this.settings.panicSource;
+    const transitionChanged = ['transitionType', 'transitionFrames', 'transitionDirection'].some((k) => next[k] !== this.settings[k]);
 
     const engineRelevant = allowed.some((k) => next[k] !== this.settings[k]);
     this.settings = next;
@@ -232,7 +260,12 @@ class Controller extends EventEmitter {
     if (engineRelevant) {
       await this.refreshDisplays();
       await this.engine.restart(this.engineOptions());
+      return;
     }
+    if (panicChanged && this.panic && this.engine.status === 'running') await this._applyPanic().catch(() => {});
+    if (masterChanged && !this.panic && this.engine.status === 'running') await this._applyMaster().catch(() => {});
+    // Samodejno nadaljevanje ima prehod pripet v ozadje; ob spremembi prehoda ga pripravimo znova.
+    if (transitionChanged && this.autoCuedId && this.preview.item) await this._cue().catch(() => {});
   }
 
   // ---------- knjižnica ----------
@@ -257,6 +290,12 @@ class Controller extends EventEmitter {
 
   removeItem(id) {
     this.library.items = this.library.items.filter((x) => x.id !== id);
+    this.playlist.removeMedia(id);
+    if (this.settings.panicSource === id) {
+      this.settings.panicSource = '';
+      writeJson(this.settingsFile, this.settings);
+    }
+    writeJson(this.playlistFile, this.playlist.toJSON());
     this._saveLibrary();
   }
 
@@ -274,6 +313,131 @@ class Controller extends EventEmitter {
     const [it] = items.splice(from, 1);
     items.splice(Math.max(0, Math.min(items.length, toIndex)), 0, it);
     this._saveLibrary();
+  }
+
+  // ---------- playlist ----------
+
+  _savePlaylist() {
+    writeJson(this.playlistFile, this.playlist.toJSON());
+    this._changed();
+  }
+
+  _group(groupId) {
+    const g = this.playlist.group(groupId);
+    if (!g) this._error('Skupina ne obstaja');
+    return g;
+  }
+
+  addGroup(name) {
+    const g = this.playlist.addGroup(name);
+    this._savePlaylist();
+    return g.id;
+  }
+
+  async removeGroup(groupId) {
+    this.playlist.removeGroup(groupId);
+    this._savePlaylist();
+    await this._rearm();
+  }
+
+  async setGroup(groupId, patch) {
+    this._group(groupId);
+    this.playlist.setGroup(groupId, patch || {});
+    this._savePlaylist();
+    await this._rearm();
+  }
+
+  moveGroup(groupId, index) {
+    this.playlist.moveGroup(groupId, index);
+    this._savePlaylist();
+  }
+
+  async addToGroup(groupId, mediaIds, index) {
+    this._group(groupId);
+    const ids = (mediaIds || []).filter((id) => this.library.items.some((x) => x.id === id));
+    const added = this.playlist.addMedia(groupId, ids, index);
+    this._savePlaylist();
+    await this._rearm();
+    return added.length;
+  }
+
+  async removeEntry(entryId) {
+    this.playlist.removeEntry(entryId);
+    this._savePlaylist();
+    await this._rearm();
+  }
+
+  async moveEntry(entryId, toGroupId, index) {
+    this.playlist.moveEntry(entryId, toGroupId, index);
+    this._savePlaylist();
+    await this._rearm();
+  }
+
+  /** Prvi posnetek skupine v preview. */
+  async cueGroup(groupId) {
+    const g = this._group(groupId);
+    if (!g.items.length) this._error('Skupina je prazna');
+    await this.loadPreview(g.items[0].mediaId, g.items[0].id);
+  }
+
+  _srcOf(entryId) {
+    if (!entryId) return null;
+    const f = this.playlist.findEntry(entryId);
+    return f ? { groupId: f.group.id, entryId } : null;
+  }
+
+  /** Kaj pride za danim posnetkom: naslednji v skupini ali v knjižnici. */
+  _nextFor(item, src) {
+    if (src) {
+      const n = this.playlist.nextAfter(src.entryId);
+      if (!n) return null;
+      const next = this.library.items.find((x) => x.id === n.entry.mediaId);
+      return next ? { item: next, entryId: n.entry.id } : null;
+    }
+    const items = this.library.items;
+    const idx = items.findIndex((x) => x.id === item.id);
+    const next = idx >= 0 ? items[idx + 1] : null;
+    return next ? { item: next, entryId: null } : null;
+  }
+
+  /**
+   * Ali naj posnetek v preview sam sledi programu, ko se ta konča:
+   * 'bg' = motor ga sam zažene na koncu videa, 'timer' = slika na programu, preklopimo po času, null = ne.
+   */
+  _autoFollowMode() {
+    const p = this.program;
+    const v = this.preview;
+    if (!p.item || !p.src || !v.item || !v.src) return null;
+    const g = this.playlist.group(p.src.groupId);
+    if (!g || !g.autoFollow) return null;
+    const next = this.playlist.nextAfter(p.src.entryId);
+    if (!next || next.group.id !== g.id || next.entry.id !== v.src.entryId) return null;
+    if (p.item.type === 'image') return 'timer';
+    if (p.item.loop) return null; // zanka se nikoli ne konča
+    return 'bg';
+  }
+
+  /** Po spremembi playliste preverimo, ali je samodejno nadaljevanje še pravilno pripravljeno. */
+  async _rearm() {
+    if (this.engine.status !== 'running') return;
+    const p = this.program;
+    const g = p.src && this.playlist.group(p.src.groupId);
+    if (g && g.autoFollow && !this.preview.item) {
+      const next = this._nextFor(p.item, p.src);
+      if (next) {
+        try {
+          await this.loadPreview(next.item.id, next.entryId);
+        } catch { /* napaka je že prikazana */ }
+        return;
+      }
+    }
+    const want = this._autoFollowMode();
+    const have = this.autoCuedId ? 'bg' : this.imageTimer ? 'timer' : null;
+    if (want !== have && this.preview.item) {
+      try {
+        await this._cue();
+      } catch { /* ni kritično */ }
+    }
   }
 
   // ---------- preview / program ----------
@@ -314,32 +478,70 @@ class Controller extends EventEmitter {
     return `PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item, seekFrames)}${transition ? ' ' + transition : ''}`;
   }
 
-  async _cue(item) {
-    // Preview pokaže prvo sličico, program ima posnetek že odprt v ozadju (takojšen CUT).
-    this.cuedId = null;
-    await this.engine.send(`LOAD ${PREVIEW_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item)}`);
-    await this.engine.send(`LOADBG ${PROGRAM_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item)}`);
-    this.cuedId = item.id;
+  _clearImageTimer() {
+    if (this.imageTimer) clearTimeout(this.imageTimer);
+    this.imageTimer = null;
   }
 
-  /** Naloži posnetek v PREVIEW. */
-  async loadPreview(id) {
+  /**
+   * Pripravi posnetek iz preview: preview pokaže prvo sličico, program ga ima že odprtega v ozadju
+   * (takojšen CUT). Če skupina samodejno nadaljuje, motor ozadje sam zažene ob koncu programa.
+   */
+  async _cue() {
+    const item = this.preview.item;
+    this.cuedId = null;
+    this.autoCuedId = null;
+    this._clearImageTimer();
+    if (!item) return;
+    const mode = this._autoFollowMode();
+    const seek = this.preview.seek || 0;
+    await this.engine.send(`LOAD ${PREVIEW_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item, seek)}`);
+    let bg = `LOADBG ${PROGRAM_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item, seek)}`;
+    if (mode === 'bg') bg += `${this._followCut() ? '' : ' ' + this.transitionPart()} AUTO`;
+    await this.engine.send(bg);
+    this.cuedId = item.id;
+    if (mode === 'bg') this.autoCuedId = item.id;
+    if (mode === 'timer') this._startImageTimer();
+    this._changed();
+  }
+
+  /** Ali skupina, ki je na programu, samodejno nadaljuje s CUT (brez prehoda). */
+  _followCut() {
+    const g = this.program.src && this.playlist.group(this.program.src.groupId);
+    return !!(g && g.followCut);
+  }
+
+  _startImageTimer() {
+    const g = this.playlist.group(this.program.src.groupId);
+    const wait = Math.max(0, g.imageSeconds * 1000 - (Date.now() - this.program.startedAt));
+    const expect = this.preview.src.entryId;
+    this.imageTimer = setTimeout(() => {
+      this.imageTimer = null;
+      if (!this.preview.src || this.preview.src.entryId !== expect) return;
+      this.take(this._followCut() ? 'cut' : 'auto').catch(() => {});
+    }, wait);
+  }
+
+  /** Naloži posnetek v PREVIEW. entryId = vnos v playlisti (če je posnetek iz playliste). */
+  async loadPreview(id, entryId = null) {
     const item = this._item(id);
     this._checkFile(item);
-    this.preview = { item: { ...item } };
+    this.preview = { item: { ...item }, src: this._srcOf(entryId), seek: 0 };
     this.lastError = '';
     this._changed();
     if (this.engine.status !== 'running') return;
     try {
-      await this._cue(item);
+      await this._cue();
     } catch (e) {
       this._error(`Nalaganje v preview ni uspelo: ${e.message}`);
     }
   }
 
   async clearPreview() {
-    this.preview = { item: null };
+    this.preview = { item: null, src: null, seek: 0 };
     this.cuedId = null;
+    this.autoCuedId = null;
+    this._clearImageTimer();
     this._changed();
     if (this.engine.status === 'running') {
       await this.engine.send(`CLEAR ${PREVIEW_CHANNEL}-${LAYER_MAIN}`);
@@ -347,37 +549,46 @@ class Controller extends EventEmitter {
     }
   }
 
-  /** Preview gre na program. kind: 'cut' ali 'auto'. */
-  async take(kind = 'cut') {
-    const item = this.preview.item;
-    if (!item) this._error('Preview je prazen');
-    this._requireEngine();
-    this._checkFile(item);
-    try {
-      if (kind === 'cut' && this.cuedId === item.id) {
-        await this.engine.send(`PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
-      } else {
-        await this.engine.send(this._playCommand(item, 0, kind === 'auto' ? this.transitionPart() : ''));
-      }
-    } catch (e) {
-      this._error(`Prehod ni uspel: ${e.message}`);
-    }
+  _onAir(item, src, seekFrames = 0) {
     this.cuedId = null;
-    this.program = { item: { ...item }, startedAt: Date.now() };
+    this.autoCuedId = null;
+    this._clearImageTimer();
+    const offset = (seekFrames / fpsOf(this.settings.videoMode)) * 1000;
+    this.program = { item: { ...item }, startedAt: Date.now() - offset, src: src || null };
     this.times[PROGRAM_CHANNEL] = null;
     this.lastError = '';
     this._changed();
-    await this._afterTake(item);
   }
 
-  async _afterTake(item) {
-    if (this.settings.autoNext) {
-      const items = this.library.items;
-      const idx = items.findIndex((x) => x.id === item.id);
-      const next = idx >= 0 ? items[idx + 1] : null;
+  /** Preview gre na program. kind: 'cut' ali 'auto'. */
+  async take(kind = 'cut') {
+    const { item, src } = this.preview;
+    if (!item) this._error('Preview je prazen');
+    this._requireEngine();
+    this._checkFile(item);
+    this._clearImageTimer();
+    try {
+      // Ozadje s samodejnim nadaljevanjem ima pripet prehod, zato CUT v tem primeru pošlje posnetek znova.
+      if (kind === 'cut' && this.cuedId === item.id && this.autoCuedId !== item.id) {
+        await this.engine.send(`PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
+      } else {
+        await this.engine.send(this._playCommand(item, this.preview.seek || 0, kind === 'auto' ? this.transitionPart() : ''));
+      }
+      await this._applyItemVolume(item, kind === 'auto' ? this.settings.transitionFrames : 0);
+    } catch (e) {
+      this._error(`Prehod ni uspel: ${e.message}`);
+    }
+    this._onAir(item, src, this.preview.seek || 0);
+    await this._afterTake(item, src);
+  }
+
+  async _afterTake(item, src) {
+    const g = src && this.playlist.group(src.groupId);
+    if (this.settings.autoNext || (g && g.autoFollow)) {
+      const next = this._nextFor(item, src);
       if (next) {
         try {
-          await this.loadPreview(next.id);
+          await this.loadPreview(next.item.id, next.entryId);
         } catch { /* napaka je že prikazana */ }
         return;
       }
@@ -386,26 +597,33 @@ class Controller extends EventEmitter {
     }
     // Brez samodejnega naslednjega: isti posnetek ostane pripravljen.
     try {
-      await this._cue(item);
+      await this._cue();
     } catch { /* ni kritično */ }
   }
 
   /** Način brez preview: posnetek gre neposredno na program. */
-  async playDirect(id, kind) {
+  async playDirect(id, kind, entryId = null) {
     const item = this._item(id);
     this._checkFile(item);
     this._requireEngine();
     const k = kind || this.settings.directTake;
+    this._clearImageTimer();
     try {
       await this.engine.send(this._playCommand(item, 0, k === 'auto' ? this.transitionPart() : ''));
+      await this._applyItemVolume(item, k === 'auto' ? this.settings.transitionFrames : 0);
     } catch (e) {
       this._error(`Predvajanje ni uspelo: ${e.message}`);
     }
-    this.cuedId = null;
-    this.program = { item: { ...item }, startedAt: Date.now() };
-    this.times[PROGRAM_CHANNEL] = null;
-    this.lastError = '';
-    this._changed();
+    const src = this._srcOf(entryId);
+    this._onAir(item, src);
+    const g = src && this.playlist.group(src.groupId);
+    if (g && g.autoFollow) {
+      await this._afterTake(item, src); // naslednji se pripravi v ozadju in sledi sam
+    } else if (this.preview.item) {
+      try {
+        await this._cue();
+      } catch { /* ni kritično */ }
+    }
   }
 
   /** Združljivost s 1. korakom. */
@@ -415,7 +633,9 @@ class Controller extends EventEmitter {
 
   /** Počisti program. withTransition = zatemnitev s trenutnim trajanjem prehoda. */
   async clearProgram(withTransition = false) {
-    this.program = { item: null, startedAt: 0 };
+    this._clearImageTimer();
+    this.autoCuedId = null;
+    this.program = { item: null, startedAt: 0, src: null };
     this.times[PROGRAM_CHANNEL] = null;
     this._changed();
     if (this.engine.status !== 'running') return;
@@ -428,19 +648,102 @@ class Controller extends EventEmitter {
     // Ozadje programa je bilo morda izpraznjeno; preview ponovno pripravimo.
     if (this.preview.item) {
       try {
-        await this._cue(this.preview.item);
+        await this._cue();
       } catch { /* ni kritično */ }
+    }
+  }
+
+  // ---------- zvok in premikanje po posnetku ----------
+
+  async _applyItemVolume(item, frames = 0) {
+    const g = dbToGain(item.volumeDb);
+    const f = Math.max(0, Math.round(Number(frames) || 0));
+    await this.engine.send(`MIXER ${PROGRAM_CHANNEL}-${LAYER_MAIN} VOLUME ${g.toFixed(4)}${f ? ` ${f} LINEAR` : ''}`);
+  }
+
+  async _applyMaster() {
+    await this.engine.send(`MIXER ${PROGRAM_CHANNEL} MASTERVOLUME ${dbToGain(this.settings.masterVolumeDb).toFixed(4)}`);
+  }
+
+  /** Jakost posnetka (shrani se k posnetku). Če je na programu, se spremeni takoj. */
+  async setItemVolume(id, db) {
+    const it = this._item(id);
+    it.volumeDb = clampDb(db, 0);
+    for (const slot of [this.program, this.preview]) if (slot.item && slot.item.id === id) slot.item.volumeDb = it.volumeDb;
+    this._saveLibrary();
+    if (this.program.item && this.program.item.id === id && this.engine.status === 'running') {
+      await this._applyItemVolume(this.program.item, 0);
+    }
+  }
+
+  /** Premik po posnetku. ch 'program' = takoj na izhodu, 'preview' = začetna točka za naslednji preklop. */
+  async seek(which, seconds) {
+    this._requireEngine();
+    const fps = fpsOf(this.settings.videoMode);
+    const slot = which === 'program' ? this.program : this.preview;
+    if (!slot.item || slot.item.type === 'image') this._error('Ni posnetka za premik');
+    const t = this.times[which === 'program' ? PROGRAM_CHANNEL : PREVIEW_CHANNEL];
+    let sec = Math.max(0, Number(seconds) || 0);
+    if (t && t.total) sec = Math.min(sec, Math.max(0, t.total - 0.1));
+    const frames = Math.round(sec * fps);
+    if (which === 'program') {
+      await this.engine.send(`CALL ${PROGRAM_CHANNEL}-${LAYER_MAIN} SEEK ${frames}`);
+      this.program.startedAt = Date.now() - sec * 1000;
+    } else {
+      this.preview.seek = frames;
+      await this._cue();
+    }
+  }
+
+  // ---------- panika ----------
+
+  /** Panika: program takoj na črno (ali logo) in brez zvoka. Posnetek pod tem teče naprej. */
+  async setPanic(on) {
+    this.panic = !!on;
+    this._changed();
+    if (this.engine.status !== 'running') return; // ob zagonu motorja se nastavi samo
+    try {
+      await this._applyPanic();
+    } catch (e) {
+      this._error(`Panika ni uspela: ${e.message}`);
+    }
+  }
+
+  async _applyPanic() {
+    const ch = PROGRAM_CHANNEL;
+    if (this.panic) {
+      await this.engine.send(`PLAY ${ch}-${LAYER_PANIC_BG} #FF000000`);
+      await this.engine.send(`MIXER ${ch} MASTERVOLUME 0`);
+      const logo = this.settings.panicSource && this.library.items.find((x) => x.id === this.settings.panicSource);
+      if (logo && fs.existsSync(logo.path)) {
+        await this.engine.send(`PLAY ${ch}-${LAYER_PANIC} ${quote(mediaPath(logo.path))}${logo.type === 'image' ? '' : ' LOOP'}`);
+      } else {
+        await this.engine.send(`CLEAR ${ch}-${LAYER_PANIC}`);
+      }
+    } else {
+      await this.engine.send(`CLEAR ${ch}-${LAYER_PANIC}`);
+      await this.engine.send(`CLEAR ${ch}-${LAYER_PANIC_BG}`);
+      await this._applyMaster();
     }
   }
 
   // ---------- motor: obnova, monitorji, čas ----------
 
   async _onEngineReady() {
+    this._lastPgmPath = null;
     await this._addMonitors();
+    if (!this.panic) await this._applyMaster().catch(() => {});
+    if (this.panic) {
+      try {
+        await this._applyPanic();
+      } catch (e) {
+        this.engine._log(`Panike ni bilo mogoče obnoviti: ${e.message}`);
+      }
+    }
     await this._restoreProgram();
     if (this.preview.item) {
       try {
-        await this._cue(this.preview.item);
+        await this._cue();
       } catch { /* ni kritično */ }
     }
   }
@@ -469,18 +772,47 @@ class Controller extends EventEmitter {
   }
 
   _onOsc({ address, args }) {
-    const m = /^\/channel\/(\d+)\/stage\/layer\/(\d+)\/foreground\/file\/time$/.exec(address);
+    const m = /^\/channel\/(\d+)\/stage\/layer\/(\d+)\/foreground\/file\/(time|path)$/.exec(address);
     if (!m || Number(m[2]) !== LAYER_MAIN) return;
     const ch = Number(m[1]);
     if (ch !== PROGRAM_CHANNEL && ch !== PREVIEW_CHANNEL) return;
+    if (m[3] === 'path') {
+      if (ch === PROGRAM_CHANNEL) this._onProgramPath(args[0]);
+      return;
+    }
     const [elapsed, total] = args;
     if (typeof elapsed !== 'number') return;
+    const prev = this.times[ch];
+    // Isti posnetek dvakrat zapored: pot se ne spremeni, čas pa skoči na začetek.
+    if (ch === PROGRAM_CHANNEL && this.autoCuedId && prev && prev.total && prev.elapsed > prev.total - 1.5 && elapsed < 0.5
+      && this.preview.item && this.program.item && samePath(this.preview.item.path, this.program.item.path)) {
+      this._autoAdvanced();
+    }
     this.times[ch] = { elapsed, total: typeof total === 'number' ? total : 0 };
     const now = Date.now();
     if (now - this._timeEmitAt > 200) {
       this._timeEmitAt = now;
       this.emit('times', this.times);
     }
+  }
+
+  /** Motor je sam zagnal naslednji posnetek (samodejno nadaljevanje skupine). */
+  _onProgramPath(p) {
+    if (typeof p !== 'string' || p === this._lastPgmPath) return;
+    this._lastPgmPath = p;
+    const v = this.preview.item;
+    if (!this.autoCuedId || !v || v.id !== this.autoCuedId) return;
+    if (this.program.item && samePath(this.program.item.path, p)) return;
+    if (!samePath(v.path, p)) return;
+    this._autoAdvanced();
+  }
+
+  _autoAdvanced() {
+    const { item, src } = this.preview;
+    this.engine._log(`Samodejno naprej: ${item.name}`);
+    this._onAir(item, src, this.preview.seek || 0);
+    this._applyItemVolume(item, 4).catch(() => {});
+    this._afterTake(item, src).catch(() => {});
   }
 
   /** Po ponovnem zagonu motorja vrnemo na program, kar je bilo tam. */
@@ -493,6 +825,7 @@ class Controller extends EventEmitter {
         seek = ((Date.now() - p.startedAt) / 1000) * fpsOf(this.settings.videoMode);
       }
       await this.engine.send(this._playCommand(p.item, seek));
+      await this._applyItemVolume(p.item, 0);
     } catch (e) {
       this.lastError = `Obnovitev programa ni uspela: ${e.message}`;
       this._changed();
@@ -500,4 +833,22 @@ class Controller extends EventEmitter {
   }
 }
 
-module.exports = { Controller, fpsOf, PROGRAM_CHANNEL, PREVIEW_CHANNEL, LAYER_MAIN, MONITOR_CONSUMER, TRANSITIONS };
+const MIN_DB = -40;
+function clampDb(v, def) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(MIN_DB, Math.min(10, Math.round(n * 2) / 2));
+}
+/** dB v linearno jakost; -40 dB pomeni utišano. */
+function dbToGain(db) {
+  const d = Number(db) || 0;
+  return d <= MIN_DB ? 0 : Math.pow(10, d / 20);
+}
+
+/** Primerjava poti ne glede na velike črke, poševnice in končnico (motor jih lahko vrne drugače). */
+function samePath(a, b) {
+  const n = (p) => String(p).replace(/\\/g, '/').replace(/\.[^./]*$/, '').toLowerCase();
+  return n(a) === n(b);
+}
+
+module.exports = { Controller, fpsOf, samePath, dbToGain, PROGRAM_CHANNEL, PREVIEW_CHANNEL, LAYER_MAIN, MONITOR_CONSUMER, TRANSITIONS };

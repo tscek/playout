@@ -203,19 +203,6 @@ html, body {
 .item-btn.active { color: #fff; background: var(--accent); border-color: var(--accent); }
 .item-btn:hover { color: var(--text); }
 
-.onair {
-  margin: 12px;
-  padding: 16px;
-  border-radius: 8px;
-  background: #000;
-  border: 2px solid var(--line);
-}
-.onair.live { border-color: var(--red); }
-.onair-label { font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
-.onair.live .onair-label { color: var(--red); }
-.onair-name { font-size: 20px; font-weight: 600; margin-top: 6px; word-break: break-all; }
-.onair-time { font-variant-numeric: tabular-nums; color: var(--muted); margin-top: 4px; }
-
 .actions { display: grid; gap: 10px; padding: 0 12px; }
 .error { margin: 12px; padding: 10px; border-radius: 6px; background: rgba(229,56,59,.15); color: #ff8a8c; border: 1px solid rgba(229,56,59,.4); }
 .hint { margin: auto 12px 12px; color: var(--muted); font-size: 12px; }
@@ -270,3 +257,49 @@ input[type=number] {
   font: inherit;
   width: 120px;
 }
+
+/* ---------- 3. korak: playlist, panika ---------- */
+
+.bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; min-height: 0; }
+.error-float { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); margin: 0; max-width: 80vw; z-index: 10; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
+
+.btn.panic { background: transparent; border: 2px solid var(--red); color: #ff6b6e; font-weight: 800; letter-spacing: .08em; padding: 6px 14px; }
+.btn.panic.on { background: var(--red); color: #fff; animation: panic-blink 1s steps(2, start) infinite; }
+@keyframes panic-blink { 50% { background: var(--red-dark); } }
+
+.groups { overflow: auto; flex: 1; padding: 6px; display: grid; gap: 8px; align-content: start; }
+.group { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.group.target { border-color: var(--accent); }
+.group.dragover { outline: 2px dashed var(--accent); outline-offset: -3px; }
+.group-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.group-name {
+  flex: 1; min-width: 100px; background: transparent; border: 1px solid transparent; border-radius: 4px;
+  color: var(--text); font: inherit; font-weight: 700; padding: 3px 6px;
+}
+.group-name:hover, .group-name:focus { border-color: var(--line); background: var(--panel-2); outline: none; }
+.group-opt { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.group-opt input[type=number] { width: 56px; padding: 3px 4px; }
+.group-opt.on { color: var(--amber); }
+.group-list { list-style: none; margin: 0; padding: 4px; min-height: 34px; }
+.group-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+.group-list li:hover { background: var(--panel-2); }
+.group-list li.onair { box-shadow: inset 4px 0 0 var(--red); }
+.group-list li.inpvw { box-shadow: inset 4px 0 0 var(--green); }
+.group-list li.onair.inpvw { box-shadow: inset 4px 0 0 var(--red), inset 8px 0 0 var(--green); }
+.group-list li.missing .name { color: #ff6b6e; text-decoration: line-through; }
+.group-list li.drop-before { border-top: 2px solid var(--accent); }
+.group-empty { color: var(--muted); font-size: 12px; padding: 8px 10px; }
+.num { width: 22px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.badge.next { background: rgba(240,168,48,.2); color: var(--amber); }
+.library-list li[draggable=true] { cursor: grab; }
+
+.mon-ctl { display: flex; align-items: center; gap: 12px; padding: 6px 10px 0; }
+.scrub { flex: 1; min-width: 0; accent-color: var(--muted); }
+.pgm .scrub { accent-color: var(--red); }
+.pvw .scrub { accent-color: var(--green); }
+.scrub:disabled, .vol input:disabled { opacity: .3; }
+.vol { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.vol input { width: 90px; accent-color: var(--amber); }
+.vol span, #master-val { font-variant-numeric: tabular-nums; min-width: 44px; display: inline-block; text-align: right; }
+.mini.master input { width: 100%; accent-color: var(--amber); }
+.group-list li.selected { background: #1f3354; border-color: var(--accent); }

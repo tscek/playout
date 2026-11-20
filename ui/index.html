@@ -12,6 +12,7 @@
     <div id="engine-pill" class="pill pill-wait" title="Stanje motorja">Motor: povezujem …</div>
     <div id="conn-banner" class="conn-banner hidden">Povezava z aplikacijo prekinjena, ponovno povezujem …</div>
     <div class="spacer"></div>
+    <button id="btn-panic" class="btn panic" title="Program takoj na črno (ali logo) in brez zvoka. Klikni znova za izklop.">PANIKA</button>
     <label class="switch" title="Brez preview: klik na posnetek ga pošlje neposredno na program">
       <input type="checkbox" id="mode-preview">
       <span>Preview</span>
@@ -25,6 +26,10 @@
       <div class="monitor pvw" id="mon-pvw">
         <div class="mon-head"><span class="mon-label">PREVIEW</span><span class="mon-name" id="pvw-name">—</span></div>
         <div class="mon-screen"><img id="pvw-img" alt=""><div class="mon-empty" id="pvw-empty">prazno</div></div>
+        <div class="mon-ctl">
+          <input type="range" class="scrub" id="pvw-scrub" min="0" max="1000" value="0" title="Začetna točka: od kod se posnetek začne ob preklopu">
+          <label class="vol" title="Jakost tega posnetka (shrani se k posnetku)">🔊 <input type="range" id="pvw-vol" min="-40" max="10" step="0.5"><span id="pvw-vol-val"></span></label>
+        </div>
         <div class="mon-foot"><span id="pvw-time"></span><button class="btn ghost small" id="btn-pvw-clear">Počisti</button></div>
       </div>
 
@@ -41,6 +46,9 @@
           <select id="tr-dir"></select>
         </label>
         <label class="mini check"><input type="checkbox" id="auto-next"> Po preklopu naloži naslednjega</label>
+        <label class="mini master" title="Glavna jakost programa">Glavna jakost <span id="master-val"></span>
+          <input type="range" id="master-vol" min="-40" max="10" step="0.5">
+        </label>
         <div class="direct hidden" id="direct-panel">
           <div class="mini">Klik na posnetek:</div>
           <label class="mini check"><input type="radio" name="direct" value="cut"> takoj (CUT)</label>
@@ -51,6 +59,10 @@
       <div class="monitor pgm" id="mon-pgm">
         <div class="mon-head"><span class="mon-label">PROGRAM</span><span class="mon-name" id="pgm-name">—</span></div>
         <div class="mon-screen"><img id="pgm-img" alt=""><div class="mon-empty" id="pgm-empty">prazno</div></div>
+        <div class="mon-ctl">
+          <input type="range" class="scrub" id="pgm-scrub" min="0" max="1000" value="0" title="Premik po posnetku na programu (takoj na izhodu)">
+          <label class="vol" title="Jakost tega posnetka (shrani se k posnetku, spremeni se takoj)">🔊 <input type="range" id="pgm-vol" min="-40" max="10" step="0.5"><span id="pgm-vol-val"></span></label>
+        </div>
         <div class="mon-foot">
           <span id="pgm-time"></span>
           <span class="spacer"></span>
@@ -60,6 +72,7 @@
       </div>
     </section>
 
+    <section class="bottom">
     <section class="panel library">
       <div class="panel-head">
         <h2>Mediji</h2>
@@ -69,8 +82,19 @@
       </div>
       <div id="drop-hint" class="drop-hint">Povleci datoteke sem ali klikni "Dodaj medije".</div>
       <ul id="library" class="library-list"></ul>
-      <div id="error" class="error hidden"></div>
     </section>
+
+    <section class="panel playlist" id="playlist-panel">
+      <div class="panel-head">
+        <h2>Playlist</h2>
+        <span class="hint-inline">Povleci medije v skupino ali klikni + pri mediju</span>
+        <div class="spacer"></div>
+        <button id="btn-add-group" class="btn ghost small">+ Skupina</button>
+      </div>
+      <div id="groups" class="groups"></div>
+    </section>
+    </section>
+    <div id="error" class="error error-float hidden"></div>
   </main>
 
   <dialog id="dlg-settings" class="dialog">
@@ -105,6 +129,12 @@
         <input type="number" id="set-avdelay" min="0" max="25" step="1">
         <small>Za koliko sličic naj zvok zamudi (0 do 25). Slika na zaslonu ima vedno nekaj zakasnitve,
           zato zvok običajno malo prehiteva. Preveri s testnim posnetkom: bel kvadrat in pisk morata biti hkrati.</small>
+      </label>
+
+      <label class="field">
+        <span>PANIKA prikaže</span>
+        <select id="set-panic"></select>
+        <small>Črno ali slika/posnetek iz seznama medijev (npr. logo). Zvok se vedno utiša.</small>
       </label>
 
       <p class="warn">Sprememba teh nastavitev na kratko ponovno zažene motor (izhod za trenutek ugasne).</p>
