@@ -44,6 +44,9 @@ const DEFAULT_SETTINGS = {
   videoMode: '1080p5000',
   programOutput: 'auto', // 'auto' = prvi zaslon, ki ni glavni; 'test' = okno; sicer ime zaslona (npr. \\.\DISPLAY2)
   audioDevice: '', // '' = privzeta naprava sistema
+  lanRemote: false, // tablica prek omrežja
+  lanPin: '', // 6 številk
+  keyOutput: '', // key & fill: zaslon za KEY (črno-belo prosojnost); '' = brez, 'test' = testno okno
   masterVolumeDb: 0, // glavni fader programa v dB
   masterMuted: false,
   fadeSeconds: 0.5, // privzeti fade na začetku in koncu vnosa (0 = brez)
@@ -150,6 +153,8 @@ class Controller extends EventEmitter {
       displaysError: this.displaysError,
       audioWarning: this.audioWarning,
       programOutputResolved: this.resolvedOutput(),
+      keyOutputResolved: this.resolvedKeyOutput(),
+      keyWarning: this.keyWarning(),
       library: this.library.items.map((it) => ({ ...it, missing: !fileExists(it.path) })),
       program: this.program.item
         ? { id: this.program.item.id, name: this.program.item.name, type: this.program.item.type, loop: !!this.program.item.loop,
@@ -213,6 +218,23 @@ class Controller extends EventEmitter {
     return this.displays.some((x) => x.device === s.programOutput) ? s.programOutput : 'test';
   }
 
+  /** Zaslon za KEY ali '' (brez), 'test'. Isti zaslon kot PROGRAM ni dovoljen. */
+  resolvedKeyOutput() {
+    const k = this.settings.keyOutput;
+    if (!k) return '';
+    if (k === 'test') return 'test';
+    if (!this.displays.some((x) => x.device === k)) return '';
+    return k === this.resolvedOutput() ? '' : k;
+  }
+
+  keyWarning() {
+    const k = this.settings.keyOutput;
+    if (!k || k === 'test') return '';
+    if (!this.displays.some((x) => x.device === k)) return 'Zaslon za KEY ni priklopljen – key izhod je izklopljen.';
+    if (k === this.resolvedOutput()) return 'KEY in PROGRAM ne moreta biti na istem zaslonu – key izhod je izklopljen.';
+    return '';
+  }
+
   engineOptions() {
     const s = this.settings;
     const screens = [];
@@ -224,6 +246,10 @@ class Controller extends EventEmitter {
       const d = this.displays.find((x) => x.device === out);
       screens.push({ display: d, name: 'Playout PROGRAM' });
     }
+    // Key & fill: PROGRAM je "fill", na drugem zaslonu gre "key" (prosojnost kot črno-bela slika).
+    const key = this.resolvedKeyOutput();
+    if (key === 'test') screens.push({ windowedTest: true, testX: 1020, keyOnly: true, name: 'Playout KEY (testno okno)' });
+    else if (key) screens.push({ display: this.displays.find((x) => x.device === key), keyOnly: true, name: 'Playout KEY' });
     return {
       videoMode: s.videoMode,
       screens,
@@ -279,8 +305,8 @@ class Controller extends EventEmitter {
   // ---------- nastavitve ----------
 
   async updateSettings(patch) {
-    const allowed = ['videoMode', 'programOutput', 'audioDevice', 'audioDelayFrames'];
-    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb', 'masterMuted', 'fadeSeconds', 'hotkeys', 'globalHotkeys'];
+    const allowed = ['videoMode', 'programOutput', 'audioDevice', 'audioDelayFrames', 'keyOutput'];
+    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb', 'masterMuted', 'fadeSeconds', 'hotkeys', 'globalHotkeys', 'lanRemote', 'lanPin'];
     const next = { ...this.settings };
     for (const k of [...allowed, ...operational]) if (k in patch) next[k] = patch[k];
     if (!TRANSITIONS[next.transitionType]) next.transitionType = 'MIX';
@@ -293,10 +319,16 @@ class Controller extends EventEmitter {
     next.audioDelayFrames = Math.max(0, Math.min(25, Math.round(Number(next.audioDelayFrames) || 0)));
     if (next.audioDevice !== this.settings.audioDevice) this.audioWarning = '';
     if (typeof next.panicSource !== 'string') next.panicSource = '';
+    if (typeof next.keyOutput !== 'string') next.keyOutput = '';
     next.masterVolumeDb = clampDb(next.masterVolumeDb, 0);
     next.masterMuted = !!next.masterMuted;
     next.hotkeys = normHotkeys(next.hotkeys);
     next.globalHotkeys = !!next.globalHotkeys;
+    next.lanRemote = !!next.lanRemote;
+    if (next.lanPin === 'new' || (next.lanRemote && !/^\d{6}$/.test(String(next.lanPin || '')))) {
+      next.lanPin = String(require('crypto').randomInt(0, 1000000)).padStart(6, '0');
+    }
+    if (!/^\d{6}$/.test(String(next.lanPin || ''))) next.lanPin = '';
     next.fadeSeconds = Math.max(0, Math.min(10, Math.round((Number(next.fadeSeconds) || 0) * 100) / 100));
     const masterChanged = next.masterVolumeDb !== this.settings.masterVolumeDb || next.masterMuted !== this.settings.masterMuted;
     const panicChanged = next.panicSource !== this.settings.panicSource;

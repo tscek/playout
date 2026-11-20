@@ -867,3 +867,105 @@ test('napisi: celostna podoba, vklop/izklop, posodobitev v živo, izvoz', async 
     await engine.stop();
   }
 });
+
+test('key & fill: drugi zaslon dobi key izhod', async () => {
+  const { ctl, engine } = makeController();
+  try {
+    const d2 = { index: 3, device: '\\\\.\\DISPLAY4', adapter: 'Intel', monitor: 'ATEM 2', active: true, primary: false, x: 3840, y: 0, width: 1920, height: 1080, hz: 50 };
+    ctl.listDisplaysFn = async () => [
+      { index: 2, device: '\\\\.\\DISPLAY3', adapter: 'Intel', monitor: 'ATEM', active: true, primary: false, x: 1920, y: 0, width: 1920, height: 1080, hz: 50 }, d2];
+    await ctl.refreshDisplays();
+    ctl.settings.keyOutput = d2.device;
+    let o = ctl.engineOptions();
+    assert.strictEqual(o.screens.length, 2);
+    assert.strictEqual(o.screens[1].keyOnly, true);
+    const { buildConfig } = require('../main/engine/caspar-config');
+    const cfg = buildConfig({ ...o, paths: { media: '/m', log: '/l', data: '/d', template: '/t' }, amcpPort: 5250 });
+    assert.ok(/<device>4<\/device>[\s\S]*<key-only>true<\/key-only>/.test(cfg));
+    // isti zaslon kot PROGRAM: key izklopljen z opozorilom
+    ctl.settings.keyOutput = '\\\\.\\DISPLAY3';
+    o = ctl.engineOptions();
+    assert.strictEqual(o.screens.length, 1);
+    assert.ok(ctl.keyWarning());
+    ctl.settings.keyOutput = 'test';
+    o = ctl.engineOptions();
+    assert.strictEqual(o.screens[1].windowedTest, true);
+    assert.strictEqual(o.screens[1].keyOnly, true);
+  } finally {
+    ctl._unwatch();
+    await engine.stop();
+  }
+});
+
+test('tablica: omrežni dostop s PIN in samo dovoljeni ukazi', async () => {
+  const http = require('http');
+  const WebSocket = require('ws');
+  const { createServer } = require('../main/server');
+  const { ctl, engine } = makeController();
+  const lanPort = portBase++;
+  let srv;
+  const get = (p) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${lanPort}${p}`, (res) => {
+      let b = '';
+      res.on('data', (d) => { b += d; });
+      res.on('end', () => resolve({ code: res.statusCode, body: b }));
+    }).on('error', reject);
+  });
+  const wsCall = (pin, action, args) => new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${lanPort}/ws?pin=${pin}`);
+    ws.on('error', reject);
+    ws.on('unexpected-response', (req, res) => reject(new Error(`HTTP ${res.statusCode}`)));
+    ws.on('open', () => ws.send(JSON.stringify({ id: 1, action, args })));
+    ws.on('message', (m) => {
+      const msg = JSON.parse(m.toString());
+      if (msg.type === 'reply') {
+        ws.close();
+        resolve(msg);
+      }
+    });
+  });
+  try {
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    srv = await createServer({ controller: ctl, uiDir: path.join(__dirname, '..', 'ui'), port: 0, lanPort });
+    // izklopljeno: ni strežnika
+    await assert.rejects(get('/'));
+    await ctl.updateSettings({ lanRemote: true });
+    const pin = ctl.settings.lanPin;
+    assert.match(pin, /^\d{6}$/);
+    await waitFor(() => srv.lanInfo().running, 3000);
+    let r = await get('/');
+    assert.strictEqual(r.code, 200);
+    assert.ok(r.body.includes('remote.js'), 'tablica dobi poenostavljen vmesnik');
+    r = await get('/api/state');
+    assert.strictEqual(r.code, 401);
+    r = await get(`/api/state?pin=${pin}`);
+    assert.strictEqual(r.code, 200);
+    await assert.rejects(wsCall('000000', 'state.get'), /401/);
+    let m = await wsCall(pin, 'state.get');
+    assert.strictEqual(m.ok, true);
+    m = await wsCall(pin, 'settings.update', { lanRemote: false });
+    assert.strictEqual(m.ok, false, 'tablica ne sme spreminjati nastavitev');
+    m = await wsCall(pin, 'library.remove', { id: 'x' });
+    assert.strictEqual(m.ok, false);
+    m = await wsCall(pin, 'program.panic', { on: true });
+    assert.strictEqual(m.ok, true);
+    assert.strictEqual(ctl.panic, true);
+    // nov PIN: stari ne velja več
+    await ctl.updateSettings({ lanPin: 'new' });
+    assert.notStrictEqual(ctl.settings.lanPin, pin);
+    r = await get(`/api/state?pin=${pin}`);
+    assert.strictEqual(r.code, 401);
+    // izklop zapre strežnik
+    await ctl.updateSettings({ lanRemote: false });
+    await waitFor(() => !srv.lanInfo().running, 3000);
+  } finally {
+    if (srv) {
+      srv.closeLan();
+      srv.server.close();
+      for (const c of srv.wss.clients) c.terminate();
+    }
+    ctl._unwatch();
+    await engine.stop();
+  }
+});

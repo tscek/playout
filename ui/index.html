@@ -180,6 +180,15 @@
       <button type="button" id="btn-refresh-displays" class="btn ghost small">Osveži seznam zaslonov</button>
 
       <label class="field">
+        <span>Izhod KEY (key &amp; fill za ATEM)</span>
+        <select id="set-key"></select>
+        <small>Za napise čez kamero na mešalni mizi. Izhod PROGRAM je <b>fill</b> (barvna slika), ta zaslon pa <b>key</b>
+          (belo = vidno, črno = prosojno). Na ATEM: Upstream Key → Luma, Fill source = vhod s PROGRAM, Key source = vhod s KEY,
+          vklopi <i>Pre Multiplied Key</i>. Na programu naj ne bo posnetka, samo napisi.</small>
+        <small id="key-warning" class="bad hidden"></small>
+      </label>
+
+      <label class="field">
         <span>Zvočni izhod</span>
         <select id="set-audio"></select>
         <small>Če izbrana naprava ne deluje, motor samodejno preklopi na privzeto.</small>
@@ -208,6 +217,18 @@
         <small>Stream Deck / Companion: ukaze pošlji kot HTTP na <code id="api-url">http://127.0.0.1:8088/api/cut</code>
           (tudi <code>/api/auto</code>, <code>/api/panic</code>, <code>/api/next</code>, <code>/api/action/Ime akcije</code>, <code>/api/group/Ime skupine</code>, <code>/api/state</code>).</small>
         <button type="button" class="btn ghost small" id="btn-hotkeys-reset">Privzete bližnjice</button>
+      </div>
+
+      <div class="field">
+        <span>Tablica (upravljanje prek omrežja)</span>
+        <label class="act-field"><input type="checkbox" id="set-lan"> Dovoli upravljanje s tablice ali telefona v istem omrežju</label>
+        <div id="lan-box" class="lan-box hidden">
+          <div>Na tablici odpri: <span id="lan-urls"></span></div>
+          <div>PIN: <b id="lan-pin" class="lan-pin"></b> <button type="button" class="btn ghost small" id="btn-lan-pin">Nov PIN</button></div>
+          <small id="lan-status"></small>
+        </div>
+        <small>Tablica lahko preklaplja (CUT, AUTO, playlista, napisi, akcije, panika) in vidi program, ne more pa brisati datotek ali spreminjati nastavitev.
+          Ob prvem vklopu Windows vpraša za dovoljenje omrežja: izberi <i>Zasebna omrežja</i>.</small>
       </div>
 
       <label class="field">

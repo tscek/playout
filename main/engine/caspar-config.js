@@ -34,12 +34,12 @@ function p(path) {
  * zaslon (to je zanesljivejše od pravega celozaslonskega načina, ki v
  * knjižnici SFML deluje le na glavnem zaslonu).
  */
-function screenConsumer({ display, keyOnly = false, name, windowedTest = false, delayFrames = 0 }) {
+function screenConsumer({ display, keyOnly = false, name, windowedTest = false, testX = 40, delayFrames = 0 }) {
   const lines = ['<screen>'];
   if (windowedTest) {
     // Testni način: navadno okno na glavnem zaslonu, 960×540.
     lines.push('<device>1</device>', '<windowed>true</windowed>', '<borderless>false</borderless>',
-      '<width>960</width>', '<height>540</height>', '<x>40</x>', '<y>40</y>');
+      '<width>960</width>', '<height>540</height>', `<x>${testX}</x>`, '<y>40</y>');
   } else {
     lines.push(
       `<device>${display.index + 1}</device>`,

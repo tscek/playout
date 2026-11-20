@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#121418">
+  <title>Playout – tablica</title>
+  <link rel="stylesheet" href="remote.css">
+</head>
+<body>
+  <div id="pin-screen" class="pin-screen hidden">
+    <div class="pin-card">
+      <h1>Playout</h1>
+      <p>Vpiši PIN, ki ga vidiš v aplikaciji na računalniku (Nastavitve → Tablica).</p>
+      <input id="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="••••••">
+      <button id="pin-ok" class="big go">Poveži</button>
+      <p id="pin-error" class="bad"></p>
+    </div>
+  </div>
+
+  <header class="top">
+    <b>Playout</b>
+    <span id="r-project" class="muted"></span>
+    <span id="r-conn" class="conn off" title="Povezava z računalnikom"></span>
+    <span class="spacer"></span>
+    <button id="r-mon-toggle" class="small">Monitor</button>
+    <button id="r-panic" class="panic" title="Drži za paniko">PANIKA<span class="hold"></span></button>
+  </header>
+
+  <main class="wrap">
+    <section class="left">
+      <div class="mon" id="r-mon">
+        <img id="r-pgm-img" alt="">
+        <div class="mon-label">PROGRAM</div>
+      </div>
+      <div class="now">
+        <div class="row pgm"><span class="tag pgm">PGM</span><span id="r-pgm-name" class="nm">—</span><span id="r-pgm-time" class="tm"></span></div>
+        <div class="row pvw" id="r-pvw-row"><span class="tag pvw">PVW</span><span id="r-pvw-name" class="nm">—</span></div>
+      </div>
+      <div class="take">
+        <button id="r-cut" class="big cut">CUT</button>
+        <button id="r-auto" class="big auto">AUTO</button>
+      </div>
+      <div class="nav">
+        <button id="r-prev">◀ Prejšnji</button>
+        <button id="r-next">Naslednji ▶</button>
+        <button id="r-pause">❚❚ / ▶</button>
+        <button id="r-fade">Zatemni</button>
+      </div>
+    </section>
+
+    <section class="right">
+      <div class="tabs" id="r-tabs">
+        <button data-t="playlist" class="on">Playlista</button>
+        <button data-t="titles">Napisi <span id="r-titles-on" class="cnt hidden"></span></button>
+        <button data-t="actions">Akcije</button>
+      </div>
+      <div class="pane" id="p-playlist"></div>
+      <div class="pane hidden" id="p-titles"></div>
+      <div class="pane hidden" id="p-actions"></div>
+    </section>
+  </main>
+  <div id="r-error" class="toast hidden"></div>
+  <script src="remote.js"></script>
+</body>
+</html>

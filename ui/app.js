@@ -733,6 +733,11 @@ function renderMonitors() {
   const tp = T.pvw && T.items.find((t) => t.id === T.pvw);
   if (tp) $('#pvw-name').append(el('span', 'mon-titles', `Aa ${tp.label}`));
   if (T.onAir.length) $('#pgm-name').append(el('span', 'mon-titles', `Aa ${T.onAir.length} ${T.onAir.length === 1 ? 'napis' : T.onAir.length === 2 ? 'napisa' : T.onAir.length < 5 ? 'napisi' : 'napisov'}`));
+  if (state.keyOutputResolved) {
+    const k = el('span', 'mon-titles', 'KEY + FILL');
+    k.title = 'Izhod PROGRAM je fill, drugi zaslon je key (nastavitve)';
+    $('#pgm-name').append(k);
+  }
   $('#pvw-empty').classList.toggle('hidden', !!pvw || !!tp);
   $('#pgm-empty').classList.toggle('hidden', !!pgm || T.onAir.length > 0);
   $('#mon-pgm').classList.toggle('live', !!pgm);
@@ -1550,6 +1555,35 @@ function renderHotkeys() {
   $('#api-url').textContent = `${location.origin}/api/cut`;
 }
 $('#set-global-hotkeys').onchange = (e) => settingsPatch({ globalHotkeys: e.target.checked });
+
+// Tablica
+async function renderLan() {
+  if (!state) return;
+  $('#set-lan').checked = !!state.settings.lanRemote;
+  $('#lan-box').classList.toggle('hidden', !state.settings.lanRemote);
+  if (!state.settings.lanRemote) return;
+  const info = await run('lan.info');
+  if (!info) return;
+  const box = $('#lan-urls');
+  box.innerHTML = '';
+  if (!info.urls.length) box.textContent = 'računalnik ni v omrežju';
+  for (const u of info.urls) {
+    const c = el('code', 'lan-url', u.url);
+    c.title = u.name;
+    box.append(c, ' ');
+  }
+  $('#lan-pin').textContent = info.pin;
+  $('#lan-status').textContent = info.error ? `Napaka: ${info.error}` : info.running ? `Vklopljeno. Povezanih tablic: ${info.clients}.` : 'Zaganjam …';
+  $('#lan-status').className = info.error ? 'bad' : 'info';
+}
+$('#set-lan').onchange = async (e) => {
+  await settingsPatch({ lanRemote: e.target.checked });
+  setTimeout(renderLan, 300);
+};
+$('#btn-lan-pin').onclick = async () => {
+  await settingsPatch({ lanPin: 'new' });
+  renderLan();
+};
 $('#btn-hotkeys-reset').onclick = () => settingsPatch({ hotkeys: null }).then(() => renderHotkeys());
 
 // Povleci in spusti datoteke.
@@ -1616,6 +1650,12 @@ function fillSettings() {
   const res = state.programOutputResolved;
   const resDisp = state.displays.find((d) => d.device === res);
   $('#out-resolved').textContent = 'Trenutno: ' + (resDisp ? resDisp.label : res === 'test' ? 'testno okno' : 'brez slike');
+  const keys = [['', 'Brez (samo PROGRAM)']];
+  for (const d of state.displays) keys.push([d.device, d.label]);
+  keys.push(['test', 'Testno okno (poleg testnega okna PROGRAM)']);
+  fillSelect($('#set-key'), keys, s.keyOutput || '');
+  $('#key-warning').textContent = state.keyWarning || '';
+  $('#key-warning').classList.toggle('hidden', !state.keyWarning);
   $('#displays-error').textContent = state.displaysError || '';
   $('#displays-error').classList.toggle('hidden', !state.displaysError);
   $('#audio-warning').textContent = state.audioWarning || '';
@@ -1635,6 +1675,7 @@ $('#btn-settings').onclick = async () => {
   if (devices.length) await run('audio.devices', { devices });
   fillSettings();
   renderHotkeys();
+  renderLan();
   const info = isDesktop ? await run('app.info') : null;
   if (info) {
     $('#about').textContent =
@@ -1657,6 +1698,7 @@ $('#dlg-settings').addEventListener('close', () => {
   run('settings.update', {
     videoMode: $('#set-videomode').value,
     programOutput: $('#set-output').value,
+    keyOutput: $('#set-key').value,
     audioDevice: $('#set-audio').value,
     audioDelayFrames: parseInt($('#set-avdelay').value, 10) || 0,
     panicSource: $('#set-panic').value,

@@ -1,3 +1,25 @@
+# Test v0.13.0: key & fill za ATEM, tablica
+
+Namesti novo verzijo čez staro. Vsebuje tudi napise iz v0.12.0 (opis spodaj).
+
+## Novo v 0.13.0
+
+1. **Key & fill** (Nastavitve → *Izhod KEY*): izberi drugi izhod računalnika (npr. drugi HDMI v ATEM).
+   PROGRAM je *fill* (barvna slika), KEY je črno-bela slika prosojnosti (belo = vidno).
+   - Na ATEM: Upstream Key → **Luma**, *Fill source* = vhod s PROGRAM, *Key source* = vhod s KEY, vklopi **Pre Multiplied Key**.
+   - Na programu naj ne bo posnetka, samo napisi (posnetek čez cel zaslon da bel key, torej pokrije kamero).
+   - V glavi monitorja PROGRAM piše *KEY + FILL*, ko je vklopljeno. Za preizkus brez ATEM izberi *Testno okno*.
+   - **Prosim, preveri na ATEM**: ali se fill in key ujemata (robovi napisa brez črne obrobe, brez zamika ene sličice).
+     Izhoda računalnika nista sinhronizirana med sabo; ATEM ju poravna, a to moram potrditi na tvoji opremi.
+2. **Tablica / telefon** (Nastavitve → *Tablica*): obkljukaj *Dovoli upravljanje …*. Pokaže se naslov (npr. `http://192.168.1.20:8090/`)
+   in 6-mestni **PIN**. Na tablici odpri naslov v brskalniku in vpiši PIN (zapomni si ga). Windows ob prvem vklopu vpraša za omrežje: *Zasebna omrežja*.
+   - Mali monitor programa (5 sličic/s, gumb *Monitor* ga skrije), kaj je na PGM/PVW in koliko je še do konca.
+   - **CUT**, **AUTO**, prejšnji/naslednji, pavza, zatemni.
+   - Zavihki *Playlista* (tap = v preview), *Napisi* (tap = vklop/umik), *Akcije*.
+   - **PANIKA** na tablici: za vklop jo drži pol sekunde (da je ne sprožiš po nesreči), izklop je en tap.
+   - Tablica ne more brisati datotek ali spreminjati nastavitev. *Nov PIN* takoj odklopi stare tablice.
+   - Na iPadu: v Safariju *Deli → Dodaj na začetni zaslon*, pa se odpre kot aplikacija čez cel zaslon.
+
 # Test v0.12.0: napisi, celostna podoba, ura in odštevanje
 
 Namesti novo verzijo čez staro.

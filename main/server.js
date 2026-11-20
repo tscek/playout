@@ -1,11 +1,33 @@
 'use strict';
-// HTTP + WebSocket strežnik. Isti vmesnik uporablja okno aplikacije in
-// (v kasnejšem koraku) tablica prek omrežja.
+// HTTP + WebSocket strežnik. Okno aplikacije uporablja lokalni naslov (127.0.0.1).
+// Tablica prek omrežja: drug strežnik na vseh omrežnih vmesnikih (vrata LAN_PORT), samo če je vklopljeno
+// v nastavitvah, s PIN kodo; tam so dovoljeni samo ukazi za upravljanje (REMOTE_ACTIONS).
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { WebSocketServer } = require('ws');
+
+const LAN_PORT = 8090;
+
+/** Ukazi, ki jih sme poslati tablica (nič, kar briše datoteke ali spreminja nastavitve računalnika). */
+const REMOTE_ACTIONS = new Set([
+  'state.get', 'take.cut', 'take.auto', 'preview.load', 'preview.clear', 'program.clear', 'program.panic', 'program.direct',
+  'playlist.cueGroup', 'seek', 'step', 'playPause', 'media.volume', 'media.mute', 'actions.run',
+  'titles.on', 'titles.off', 'titles.toggle', 'titles.allOff', 'titles.preview', 'remote.command',
+]);
+
+/** Naslovi IPv4 tega računalnika v lokalnem omrežju. */
+function lanAddresses() {
+  const out = [];
+  for (const [name, list] of Object.entries(os.networkInterfaces())) {
+    for (const a of list || []) {
+      if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) out.push({ name, address: a.address });
+    }
+  }
+  return out;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -26,9 +48,34 @@ const MIME = {
  * @param {string} o.host
  * @param {Record<string, Function>} o.extraActions  ukazi, ki potrebujejo Electron (npr. izbira datotek)
  */
-function createServer({ controller, uiDir, port, host = '127.0.0.1', extraActions = {}, sysload = null }) {
-  const server = http.createServer((req, res) => {
-    let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+function createServer({ controller, uiDir, port, host = '127.0.0.1', extraActions = {}, sysload = null, lanPort = LAN_PORT }) {
+  // Zaščita pred ugibanjem PIN: po 10 napačnih poskusih z istega naslova 60 s premora.
+  const fails = new Map();
+  const pinOk = (req) => {
+    const ip = req.socket.remoteAddress || '';
+    const f = fails.get(ip);
+    if (f && f.n >= 10 && Date.now() - f.at < 60000) return false;
+    const pin = new URL(req.url || '/', 'http://x').searchParams.get('pin') || req.headers['x-playout-pin'] || '';
+    const want = String(controller.settings.lanPin || '');
+    const ok = !!want && String(pin) === want && controller.settings.lanRemote;
+    if (ok) fails.delete(ip);
+    else fails.set(ip, { n: (f && Date.now() - f.at < 60000 ? f.n : 0) + 1, at: Date.now() });
+    return ok;
+  };
+
+  const handler = (remote) => (req, res) => {
+    let urlPath;
+    try {
+      urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+    } catch {
+      res.writeHead(400).end();
+      return;
+    }
+    if (remote && (urlPath.startsWith('/monitor/') || urlPath.startsWith('/api/')) && !pinOk(req)) {
+      res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Napačen PIN');
+      return;
+    }
+    if (remote && urlPath === '/') urlPath = '/remote.html';
     const mon = /^\/monitor\/(\d+)\.mjpg$/.exec(urlPath);
     if (mon) {
       const m = controller.monitors && controller.monitors[mon[1]];
@@ -46,6 +93,7 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       return;
     }
     if (urlPath === '/') urlPath = '/index.html';
+    if (urlPath === '/remote') urlPath = '/remote.html';
     const file = path.normalize(path.join(uiDir, urlPath));
     if (!file.startsWith(path.normalize(uiDir))) {
       res.writeHead(403).end();
@@ -62,7 +110,8 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       });
       res.end(data);
     });
-  });
+  };
+  const server = http.createServer(handler(false));
 
   async function handleApi(p, res) {
     const send = (code, obj) => {
@@ -102,7 +151,59 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     }
   }
 
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  const wss = new WebSocketServer({ noServer: true });
+  const onUpgrade = (remote) => (req, sock, head) => {
+    let p = '';
+    try {
+      p = new URL(req.url || '/', 'http://x').pathname;
+    } catch { /* neveljaven naslov */ }
+    if (p !== '/ws' || (remote && !pinOk(req))) {
+      sock.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      sock.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, sock, head, (ws) => {
+      ws.remote = remote;
+      wss.emit('connection', ws, req);
+    });
+  };
+  server.on('upgrade', onUpgrade(false));
+
+  // Strežnik za tablico (vklopi se v nastavitvah).
+  let lan = null;
+  let lanError = '';
+  const syncLan = () => {
+    const want = !!controller.settings.lanRemote && !!controller.settings.lanPin;
+    if (want && !lan) {
+      const s = http.createServer(handler(true));
+      s.on('upgrade', onUpgrade(true));
+      lan = s;
+      s.once('error', (e) => {
+        lanError = e.code === 'EADDRINUSE' ? `Vrata ${lanPort} so zasedena` : e.message;
+        if (lan === s) lan = null;
+        controller.engine._log(`Tablica: ${lanError}`);
+      });
+      s.listen(lanPort, '0.0.0.0', () => {
+        lanError = '';
+        controller.engine._log(`Tablica: upravljanje prek omrežja vklopljeno (vrata ${lanPort})`);
+      });
+    } else if (!want && lan) {
+      const s = lan;
+      lan = null;
+      for (const c of wss.clients) if (c.remote) c.terminate();
+      s.close();
+      controller.engine._log('Tablica: upravljanje prek omrežja izklopljeno');
+    }
+  };
+  const lanInfo = () => ({
+    enabled: !!controller.settings.lanRemote,
+    running: !!lan && lan.listening,
+    port: lanPort,
+    pin: controller.settings.lanPin || '',
+    urls: lanAddresses().map((a) => ({ name: a.name, url: `http://${a.address}:${lanPort}/` })),
+    error: lanError,
+    clients: [...wss.clients].filter((c) => c.remote).length,
+  });
 
   const actions = {
     'state.get': () => controller.getState(),
@@ -167,6 +268,8 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'titles.allOff': () => controller.titlesAllOff(),
     'titles.preview': (a) => controller.titlePreview(a && a.id),
     'brand.set': (a) => controller.setBrand(a.patch),
+    'lan.info': () => lanInfo(),
+    'remote.command': (a) => controller.runCommand(a.cmd),
     'take.cut': () => controller.take('cut'),
     'take.auto': () => controller.take('auto'),
     ...extraActions,
@@ -179,13 +282,16 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     }
   }
 
-  controller.on('state', (state) => broadcast({ type: 'state', state }));
+  controller.on('state', (state) => {
+    syncLan();
+    broadcast({ type: 'state', state });
+  });
   controller.on('times', (times) => broadcast({ type: 'times', times }));
   if (sysload) sysload.on('update', (load) => broadcast({ type: 'load', load: { ...load, engine: controller.engineRate() } }));
   controller.engine.on('log', (line) => broadcast({ type: 'log', line }));
 
   wss.on('connection', (ws, req) => {
-    ws.isLocal = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+    ws.isLocal = !ws.remote;
     ws.send(JSON.stringify({ type: 'state', state: controller.getState() }));
 
     ws.on('message', async (raw) => {
@@ -196,7 +302,7 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
         return;
       }
       const { id, action, args } = msg;
-      const fn = actions[action];
+      const fn = ws.remote && !REMOTE_ACTIONS.has(action) ? null : actions[action];
       if (!fn) {
         ws.send(JSON.stringify({ type: 'reply', id, ok: false, error: `Neznan ukaz: ${action}` }));
         return;
@@ -212,8 +318,11 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, host, () => resolve({ server, wss, port: server.address().port }));
+    server.listen(port, host, () => {
+      syncLan();
+      resolve({ server, wss, port: server.address().port, lanInfo, closeLan: () => { if (lan) lan.close(); lan = null; } });
+    });
   });
 }
 
-module.exports = { createServer };
+module.exports = { createServer, LAN_PORT, REMOTE_ACTIONS, lanAddresses };
