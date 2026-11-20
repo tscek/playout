@@ -12,7 +12,13 @@ const PS_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @"
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+public class PlayoutDisplay {
+  public int index; public string device; public string adapter; public string monitor;
+  public bool active; public bool primary;
+  public int x; public int y; public int width; public int height; public int hz;
+}
 public static class PlayoutDisp {
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
   public struct DISPLAY_DEVICE {
@@ -37,37 +43,36 @@ public static class PlayoutDisp {
     public int dmReserved1; public int dmReserved2; public int dmPanningWidth; public int dmPanningHeight;
   }
   [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-  public static extern bool EnumDisplayDevices(string lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
+  static extern bool EnumDisplayDevices(string lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-  public static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
+  static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
   [DllImport("user32.dll")]
-  public static extern bool SetProcessDPIAware();
+  static extern bool SetProcessDPIAware();
+
+  // Isti klic in isti vrstni red kot v CasparCG (screen_consumer.cpp).
+  public static PlayoutDisplay[] List() {
+    SetProcessDPIAware();
+    var list = new List<PlayoutDisplay>();
+    for (uint n = 0; ; n++) {
+      var d = new DISPLAY_DEVICE(); d.cb = Marshal.SizeOf(typeof(DISPLAY_DEVICE));
+      if (!EnumDisplayDevices(null, n, ref d, 0)) break;
+      var m = new DEVMODE(); m.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+      bool hasMode = EnumDisplaySettings(d.DeviceName, -1, ref m);
+      var mon = new DISPLAY_DEVICE(); mon.cb = Marshal.SizeOf(typeof(DISPLAY_DEVICE));
+      string monName = EnumDisplayDevices(d.DeviceName, 0, ref mon, 0) ? mon.DeviceString : "";
+      list.Add(new PlayoutDisplay {
+        index = (int)n, device = d.DeviceName, adapter = d.DeviceString, monitor = monName,
+        active = ((d.StateFlags & 1) != 0) && hasMode && m.dmPelsWidth > 0,
+        primary = (d.StateFlags & 4) != 0,
+        x = m.dmPositionX, y = m.dmPositionY, width = m.dmPelsWidth, height = m.dmPelsHeight,
+        hz = m.dmDisplayFrequency
+      });
+    }
+    return list.ToArray();
+  }
 }
 "@
-[void][PlayoutDisp]::SetProcessDPIAware()
-$out = @()
-$n = 0
-while ($true) {
-  $d = New-Object PlayoutDisp+DISPLAY_DEVICE
-  $d.cb = [Runtime.InteropServices.Marshal]::SizeOf($d)
-  if (-not [PlayoutDisp]::EnumDisplayDevices($null, [uint32]$n, [ref]$d, 0)) { break }
-  $m = New-Object PlayoutDisp+DEVMODE
-  $m.dmSize = [int16][Runtime.InteropServices.Marshal]::SizeOf($m)
-  $active = (($d.StateFlags -band 1) -ne 0)
-  $hasMode = [PlayoutDisp]::EnumDisplaySettings($d.DeviceName, -1, [ref]$m)
-  $mon = New-Object PlayoutDisp+DISPLAY_DEVICE
-  $mon.cb = [Runtime.InteropServices.Marshal]::SizeOf($mon)
-  $monName = ''
-  if ([PlayoutDisp]::EnumDisplayDevices($d.DeviceName, 0, [ref]$mon, 0)) { $monName = $mon.DeviceString }
-  $out += [pscustomobject]@{
-    index = $n; device = $d.DeviceName; adapter = $d.DeviceString; monitor = $monName;
-    active = ($active -and $hasMode); primary = (($d.StateFlags -band 4) -ne 0);
-    x = $m.dmPositionX; y = $m.dmPositionY; width = $m.dmPelsWidth; height = $m.dmPelsHeight;
-    hz = $m.dmDisplayFrequency
-  }
-  $n++
-}
-ConvertTo-Json -InputObject @($out) -Compress
+ConvertTo-Json -InputObject @([PlayoutDisp]::List()) -Compress
 `;
 
 /**
