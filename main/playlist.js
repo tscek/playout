@@ -33,6 +33,7 @@ function normEntry(e) {
     endAction: typeof e.endAction === 'string' && e.endAction ? e.endAction : null, // akcija ob koncu
     endLead: Math.max(0, Math.min(30, optSeconds(e.endLead) || 0)), // koliko sekund pred koncem
     ...normLook(e),
+    layers: (Array.isArray(e.layers) ? e.layers : []).filter((l) => l && typeof l.mediaId === 'string').slice(0, MAX_LAYERS).map(normLayer),
   };
 }
 
@@ -51,6 +52,41 @@ function normLook(e) {
     zoom: clamp(e.zoom, 0.1, 5, 1),
     posX: clamp(e.posX, -100, 100, 0),
     posY: clamp(e.posY, -100, 100, 0),
+    ...normColor(e),
+  };
+}
+
+const BLENDS = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'add', 'subtract', 'difference',
+  'soft_light', 'hard_light', 'color_dodge', 'color_burn', 'exclusion', 'luminosity', 'color'];
+const COLOR_KEYS = ['opacity', 'brightness', 'contrast', 'saturation'];
+
+/** Prosojnost in barve (1 = brez spremembe). */
+function normColor(e) {
+  return {
+    opacity: clamp(e.opacity, 0, 1, 1),
+    brightness: clamp(e.brightness, 0, 3, 1),
+    contrast: clamp(e.contrast, 0, 3, 1),
+    saturation: clamp(e.saturation, 0, 3, 1),
+  };
+}
+
+const LAYER_KEYS = ['posX', 'posY', 'scale', 'blend', 'hidden', 'loop', 'volumeDb', 'muted', 'name', ...COLOR_KEYS];
+const MAX_LAYERS = 16;
+
+/** Plast nad osnovnim posnetkom vnosa (logo, slika, video ...). */
+function normLayer(l) {
+  return {
+    id: typeof l.id === 'string' && l.id ? l.id : newId(),
+    mediaId: l.mediaId,
+    posX: clamp(l.posX, -150, 150, 0), // % širine slike
+    posY: clamp(l.posY, -150, 150, 0),
+    scale: clamp(l.scale, 0.02, 5, 1), // 1 = čez cel zaslon (z ohranjenim razmerjem)
+    blend: BLENDS.includes(l.blend) ? l.blend : 'normal',
+    hidden: !!l.hidden,
+    loop: l.loop !== false,
+    volumeDb: clamp(l.volumeDb, -40, 10, 0),
+    muted: !!l.muted,
+    ...normColor(l),
   };
 }
 
@@ -152,11 +188,61 @@ class Playlist {
     if ('endAction' in patch) e.endAction = typeof patch.endAction === 'string' && patch.endAction ? patch.endAction : null;
     if ('endLead' in patch) e.endLead = Math.max(0, Math.min(30, optSeconds(patch.endLead) || 0));
     if (patch.reset) Object.assign(patch, { fit: null, zoom: 1, posX: 0, posY: 0 });
-    for (const k of ['volumeDb', 'muted', 'fit', 'zoom', 'posX', 'posY']) {
+    if (patch.resetColor) Object.assign(patch, { opacity: 1, brightness: 1, contrast: 1, saturation: 1 });
+    for (const k of ['volumeDb', 'muted', 'fit', 'zoom', 'posX', 'posY', ...COLOR_KEYS]) {
       if (k in patch) e[k] = normLook({ ...e, [k]: k === 'volumeDb' ? Math.round(Number(patch[k]) * 2) / 2 : patch[k] })[k];
     }
     if (e.inSec !== null && e.outSec !== null && e.outSec <= e.inSec) e.outSec = null;
     return e;
+  }
+
+  // ---------- plasti vnosa ----------
+
+  addLayer(entryId, mediaId) {
+    const f = this.findEntry(entryId);
+    if (!f) return null;
+    if (f.entry.layers.length >= MAX_LAYERS) throw new Error(`Največ ${MAX_LAYERS} plasti na vnos`);
+    const l = normLayer({ mediaId });
+    f.entry.layers.push(l);
+    return l;
+  }
+
+  _layer(entryId, layerId) {
+    const f = this.findEntry(entryId);
+    const l = f && f.entry.layers.find((x) => x.id === layerId);
+    return l ? { entry: f.entry, layer: l } : null;
+  }
+
+  setLayer(entryId, layerId, patch) {
+    const hit = this._layer(entryId, layerId);
+    if (!hit) return null;
+    const p = { ...patch };
+    if (p.reset) Object.assign(p, { posX: 0, posY: 0, scale: 1 });
+    if (p.resetColor) Object.assign(p, { opacity: 1, brightness: 1, contrast: 1, saturation: 1, blend: 'normal' });
+    for (const k of LAYER_KEYS) {
+      if (!(k in p)) continue;
+      if (k === 'name') continue;
+      const v = k === 'volumeDb' ? Math.round(Number(p[k]) * 2) / 2 : p[k];
+      hit.layer[k] = normLayer({ ...hit.layer, [k]: v })[k];
+    }
+    return hit.layer;
+  }
+
+  removeLayer(entryId, layerId) {
+    const hit = this._layer(entryId, layerId);
+    if (hit) hit.entry.layers = hit.entry.layers.filter((x) => x.id !== layerId);
+    return !!hit;
+  }
+
+  /** dir: +1 = višje (bolj spredaj), -1 = nižje. */
+  moveLayer(entryId, layerId, dir) {
+    const hit = this._layer(entryId, layerId);
+    if (!hit) return;
+    const a = hit.entry.layers;
+    const i = a.indexOf(hit.layer);
+    const j = Math.max(0, Math.min(a.length - 1, i + (dir > 0 ? 1 : -1)));
+    a.splice(i, 1);
+    a.splice(j, 0, hit.layer);
   }
 
   removeEntry(entryId) {
@@ -176,7 +262,10 @@ class Playlist {
 
   /** Ko je posnetek odstranjen iz knjižnice, ga odstranimo tudi iz playliste. */
   removeMedia(mediaId) {
-    for (const g of this.groups) g.items = g.items.filter((e) => e.mediaId !== mediaId);
+    for (const g of this.groups) {
+      g.items = g.items.filter((e) => e.mediaId !== mediaId);
+      for (const e of g.items) e.layers = e.layers.filter((l) => l.mediaId !== mediaId);
+    }
   }
 
   /**
@@ -204,4 +293,4 @@ class Playlist {
   }
 }
 
-module.exports = { Playlist, DEFAULT_IMAGE_SECONDS, GROUP_ENDS, ENTRY_ENDS, optSeconds };
+module.exports = { Playlist, DEFAULT_IMAGE_SECONDS, GROUP_ENDS, ENTRY_ENDS, optSeconds, BLENDS, COLOR_KEYS, MAX_LAYERS };

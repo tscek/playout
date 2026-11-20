@@ -501,6 +501,7 @@ function renderPlaylist() {
       if (e.id === pgmEntry) li.append(el('span', 'badge pgm', 'PGM'));
       if (e.inSec || e.outSec) li.append(el('span', 'badge info', `${e.inSec ? fmtTime(e.inSec) : '0:00'}–${e.outSec ? fmtTime(e.outSec) : 'konec'}`));
       if (e.type === 'image' && e.seconds) li.append(el('span', 'badge info', `${e.seconds} s`));
+      if (e.layers && e.layers.length) li.append(el('span', 'badge info', `▤ ${e.layers.length}`));
       if (e.muted) li.append(el('span', 'badge info', '🔇'));
       else if (e.volumeDb && e.type !== 'image') li.append(el('span', 'badge info', fmtDb(e.volumeDb)));
       if (e.type !== 'audio' && (e.fit && e.fit !== 'fit' || e.zoom !== 1 || e.posX || e.posY)) li.append(el('span', 'badge info', '▣'));
@@ -757,8 +758,10 @@ function renderFitPanel(item) {
   const ok = !!(item && item.type !== 'audio' && item.src);
   btn.disabled = !ok;
   btn.title = item && !item.src ? 'Posnetek iz Medijev: za nastavitve ga dodaj v playlisto' : 'Prileganje slike';
-  const changed = ok && (item.fit && item.fit !== 'fit' || item.zoom !== 1 || item.posX || item.posY);
+  const changed = ok && (item.fit && item.fit !== 'fit' || item.zoom !== 1 || item.posX || item.posY
+    || ['opacity', 'brightness', 'contrast', 'saturation'].some((k) => item[k] !== undefined && item[k] !== 1));
   btn.classList.toggle('on', !!changed);
+  renderLayersPanel(item);
   const panel = $('#fit-panel');
   if (!ok) panel.classList.add('hidden');
   if (!ok || panel.classList.contains('hidden')) return;
@@ -767,10 +770,130 @@ function renderFitPanel(item) {
     if (!$(id).dragging) $(id).value = v;
   }
   $('#fit-zoom-val').textContent = `${$('#fit-zoom').value} %`;
+  for (const k of ['opacity', 'brightness', 'contrast', 'saturation']) {
+    const inp = $(`#col-${k}`);
+    if (!inp.dragging) inp.value = Math.round((item[k] === undefined ? 1 : item[k]) * 100);
+  }
   const known = item.width && item.height;
   $('#fit-note').textContent = (known ? `Velikost: ${item.width}×${item.height}. ` : 'Velikosti ni bilo mogoče prebrati, povečava in premik ne delujeta. ')
     + 'Spremembe vidiš v preview; na programu veljajo ob naslednjem predvajanju.';
 }
+
+// ---------- plasti ----------
+
+let selectedLayerId = null;
+const BLEND_LABEL = {
+  normal: 'Normalno', multiply: 'Multiply (množi)', screen: 'Screen (zaslon)', overlay: 'Overlay (prekrivanje)',
+  darken: 'Darken (temnejše)', lighten: 'Lighten (svetlejše)', add: 'Add (seštej)', subtract: 'Subtract (odštej)',
+  difference: 'Difference (razlika)', soft_light: 'Soft light', hard_light: 'Hard light', color_dodge: 'Color dodge',
+  color_burn: 'Color burn', exclusion: 'Exclusion', luminosity: 'Luminosity', color: 'Color',
+};
+for (const [k, v] of Object.entries(BLEND_LABEL)) $('#ly-blend').add(new Option(v, k));
+
+function renderLayersPanel(item) {
+  const btn = $('#btn-layers');
+  const ok = !!(item && item.src);
+  btn.disabled = !ok;
+  const layers = (ok && item.layers) || [];
+  btn.textContent = layers.length ? `▤ Plasti (${layers.length})` : '▤ Plasti';
+  btn.classList.toggle('on', layers.length > 0);
+  btn.title = item && !item.src ? 'Posnetek iz Medijev: za plasti ga dodaj v playlisto' : 'Plasti: več medijev hkrati (logo, slika, video) nad tem posnetkom';
+  const panel = $('#layers-panel');
+  if (!ok) panel.classList.add('hidden');
+  if (!ok || panel.classList.contains('hidden')) return;
+  const libById = new Map(state.library.map((m) => [m.id, m]));
+  const ul = $('#layer-list');
+  ul.innerHTML = '';
+  if (!layers.some((l) => l.id === selectedLayerId)) selectedLayerId = layers.length ? layers[layers.length - 1].id : null;
+  for (const l of [...layers].reverse()) {
+    const m = libById.get(l.mediaId);
+    const li = el('li', (l.id === selectedLayerId ? 'sel' : '') + (l.hidden ? ' off' : ''));
+    li.append(el('span', `type ${m ? m.type : ''}`, m ? TYPE_LABEL[m.type] : '?'), el('span', 'name', m ? m.name : '(manjka)'));
+    const mk = (txt, title, fn) => {
+      const b = el('button', '', txt);
+      b.type = 'button';
+      b.title = title;
+      b.onclick = (ev) => { ev.stopPropagation(); fn(); };
+      return b;
+    };
+    li.append(
+      mk(l.hidden ? '◌' : '👁', l.hidden ? 'Prikaži plast' : 'Skrij plast (velja takoj, tudi na programu)', () => layerSet(l.id, { hidden: !l.hidden })),
+      mk('▲', 'Višje (bolj spredaj)', () => run('layers.move', { which: 'preview', layerId: l.id, dir: 1 })),
+      mk('▼', 'Nižje', () => run('layers.move', { which: 'preview', layerId: l.id, dir: -1 })),
+      mk('✕', 'Odstrani plast', () => run('layers.remove', { which: 'preview', layerId: l.id })),
+    );
+    li.onclick = () => { selectedLayerId = l.id; renderLayersPanel(state.preview); };
+    ul.append(li);
+  }
+  const base = el('li', 'base');
+  base.append(el('span', 'name', `Osnova: ${item.name}`));
+  ul.append(base);
+  // izbira medija za novo plast
+  const sel = $('#layer-add-media');
+  if (document.activeElement !== sel) {
+    const cur = sel.value;
+    sel.innerHTML = '';
+    for (const m of sortItems(state.library.filter((x) => x.type !== 'audio'))) sel.add(new Option(m.rel || m.name, m.id));
+    if (cur) sel.value = cur;
+  }
+  const l = layers.find((x) => x.id === selectedLayerId);
+  $('#layer-edit').classList.toggle('hidden', !l);
+  if (!l) return;
+  const m = libById.get(l.mediaId);
+  const vals = { scale: Math.round(l.scale * 100), posX: l.posX, posY: l.posY, opacity: Math.round(l.opacity * 100),
+    brightness: Math.round(l.brightness * 100), contrast: Math.round(l.contrast * 100), saturation: Math.round(l.saturation * 100) };
+  for (const [k, v] of Object.entries(vals)) if (!$(`#ly-${k}`).dragging) $(`#ly-${k}`).value = v;
+  $('#ly-scale-val').textContent = `${$('#ly-scale').value} %`;
+  if (document.activeElement !== $('#ly-blend')) $('#ly-blend').value = l.blend;
+  $('#ly-video-opts').classList.toggle('hidden', !m || m.type !== 'video');
+  $('#ly-loop').checked = l.loop;
+  $('#ly-muted').checked = l.muted;
+}
+
+const layerSet = (layerId, patch) => run('layers.set', { which: 'preview', layerId, patch });
+$('#btn-layers').onclick = () => {
+  $('#layers-panel').classList.toggle('hidden');
+  render();
+};
+$('#btn-layer-add').onclick = () => {
+  const id = $('#layer-add-media').value;
+  if (id) run('layers.add', { which: 'preview', mediaId: id }).then((lid) => { if (lid) selectedLayerId = lid; });
+};
+for (const [k, div] of [['scale', 100], ['posX', 1], ['posY', 1], ['opacity', 100], ['brightness', 100], ['contrast', 100], ['saturation', 100]]) {
+  liveSlider($(`#ly-${k}`), (v) => { if (selectedLayerId) layerSet(selectedLayerId, { [k]: v / div }); },
+    k === 'scale' ? () => { $('#ly-scale-val').textContent = `${$('#ly-scale').value} %`; } : undefined);
+}
+$('#ly-blend').onchange = (e) => { if (selectedLayerId) layerSet(selectedLayerId, { blend: e.target.value }); };
+$('#ly-loop').onchange = (e) => { if (selectedLayerId) layerSet(selectedLayerId, { loop: e.target.checked }); };
+$('#ly-muted').onchange = (e) => { if (selectedLayerId) layerSet(selectedLayerId, { muted: e.target.checked }); };
+$('#ly-reset').onclick = () => { if (selectedLayerId) layerSet(selectedLayerId, { reset: true, resetColor: true }); };
+for (const k of ['opacity', 'brightness', 'contrast', 'saturation']) {
+  liveSlider($(`#col-${k}`), (v) => fitPatch({ [k]: v / 100 }));
+}
+$('#col-reset').onclick = () => fitPatch({ resetColor: true });
+
+// Medij, povlečen na preview, postane plast
+const pvwMon = $('#mon-pvw');
+pvwMon.addEventListener('dragover', (ev) => {
+  if (!(drag && drag.kind === 'media') || !(state && state.preview && state.preview.src)) return;
+  ev.preventDefault();
+  pvwMon.classList.add('layerdrop');
+});
+pvwMon.addEventListener('dragleave', () => pvwMon.classList.remove('layerdrop'));
+pvwMon.addEventListener('drop', (ev) => {
+  pvwMon.classList.remove('layerdrop');
+  if (!(drag && drag.kind === 'media')) return;
+  ev.preventDefault();
+  const id = drag.id;
+  drag = null;
+  run('layers.add', { which: 'preview', mediaId: id }).then((lid) => {
+    if (lid) {
+      selectedLayerId = lid;
+      $('#layers-panel').classList.remove('hidden');
+      render();
+    }
+  });
+});
 
 function renderTimes() {
   if (!state) return;

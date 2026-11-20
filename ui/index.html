@@ -44,7 +44,8 @@
           </span>
           <button class="btn ghost small mark" id="btn-mark-in">IN</button>
           <button class="btn ghost small mark" id="btn-mark-out">OUT</button>
-          <button class="btn ghost small mark" id="btn-fit" title="Prileganje slike: razmerje, povečava, premik">▣ Slika</button>
+          <button class="btn ghost small mark" id="btn-fit" title="Prileganje slike: razmerje, povečava, premik, barve">▣ Slika</button>
+          <button class="btn ghost small mark" id="btn-layers" title="Plasti: več medijev hkrati (logo, slika, video) nad tem posnetkom">▤ Plasti</button>
           <span class="spacer"></span>
           <span class="vol"><button class="tbtn spk" id="pvw-mute" title="Utišaj ta posnetek">🔊</button><input type="range" id="pvw-vol" min="-40" max="10" step="0.5" title="Jakost tega posnetka (shrani se k posnetku)"><span id="pvw-vol-val"></span></span>
         </div>
@@ -58,7 +59,35 @@
           <label class="act-field">Levo/desno <input type="range" id="fit-x" min="-100" max="100" step="0.5"></label>
           <label class="act-field">Gor/dol <input type="range" id="fit-y" min="-100" max="100" step="0.5"></label>
           <button type="button" class="btn ghost small" id="fit-reset">Ponastavi</button>
+          <span class="fit-sep"></span>
+          <label class="act-field">Prosojnost <input type="range" id="col-opacity" min="0" max="100" step="1"></label>
+          <label class="act-field">Svetlost <input type="range" id="col-brightness" min="0" max="200" step="1"></label>
+          <label class="act-field">Kontrast <input type="range" id="col-contrast" min="0" max="200" step="1"></label>
+          <label class="act-field">Nasičenost <input type="range" id="col-saturation" min="0" max="200" step="1"></label>
+          <button type="button" class="btn ghost small" id="col-reset">Ponastavi barve</button>
           <small class="fit-note" id="fit-note"></small>
+        </div>
+        <div class="fit-panel layers-panel hidden" id="layers-panel">
+          <div class="layers-left">
+            <ul id="layer-list" class="layer-list"></ul>
+            <div class="layer-add">
+              <select id="layer-add-media" class="mini-select"></select>
+              <button type="button" class="btn small" id="btn-layer-add">+ Plast</button>
+            </div>
+            <small class="fit-note">Medij lahko povlečeš tudi na sliko preview. Zgornja plast v seznamu je spredaj.</small>
+          </div>
+          <div class="layer-edit" id="layer-edit">
+            <label class="act-field">Velikost <input type="range" id="ly-scale" min="2" max="400" step="1"><span id="ly-scale-val"></span></label>
+            <label class="act-field">Levo/desno <input type="range" id="ly-posX" min="-100" max="100" step="0.5"></label>
+            <label class="act-field">Gor/dol <input type="range" id="ly-posY" min="-100" max="100" step="0.5"></label>
+            <label class="act-field">Prosojnost <input type="range" id="ly-opacity" min="0" max="100" step="1"></label>
+            <label class="act-field">Mešanje <select id="ly-blend" class="mini-select"></select></label>
+            <label class="act-field">Svetlost <input type="range" id="ly-brightness" min="0" max="200" step="1"></label>
+            <label class="act-field">Kontrast <input type="range" id="ly-contrast" min="0" max="200" step="1"></label>
+            <label class="act-field">Nasičenost <input type="range" id="ly-saturation" min="0" max="200" step="1"></label>
+            <label class="act-field" id="ly-video-opts"><input type="checkbox" id="ly-loop"> ponavljaj <input type="checkbox" id="ly-muted"> brez zvoka</label>
+            <button type="button" class="btn ghost small" id="ly-reset">Ponastavi</button>
+          </div>
         </div>
         <div class="mon-foot"><span id="pvw-time"></span><button class="btn ghost small" id="btn-pvw-clear">Počisti</button></div>
       </div>

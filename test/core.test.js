@@ -626,3 +626,64 @@ test('projekti: medijska mapa, podmape, kopiranje, premik, izvoz in uvoz', async
     await engine.stop();
   }
 });
+
+test('plasti in barve: preview, program, preliv, spremembe v živo', async () => {
+  const { ctl, engine, sent, dir } = makeController();
+  try {
+    const a = path.join(dir, 'a.mp4');
+    const b = path.join(dir, 'b.mp4');
+    const logo = path.join(dir, 'logo.png');
+    for (const f of [a, b, logo]) fs.writeFileSync(f, 'x');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([a, b, logo]);
+    const [ia, ib, il] = ctl.library.items;
+    const g = ctl.playlist.groups[0];
+    await ctl.addToGroup(g.id, [ia.id, ib.id]);
+    const [e1, e2] = ctl.playlist.group(g.id).items;
+    await ctl.loadPreview(ia.id, e1.id);
+    sent.length = 0;
+    const lid = await ctl.addLayer('preview', il.id);
+    assert.ok(sent.includes(`MIXER 2-20 FILL 0.0000 0.0000 1.0000 1.0000`), sent.join('\n'));
+    assert.ok(sent.some((x) => /^PLAY 2-20 ".*logo\.png"$/.test(x)), sent.join('\n'));
+    sent.length = 0;
+    await ctl.setLayer('preview', lid, { scale: 0.5, posX: 20, blend: 'multiply', opacity: 0.5 });
+    assert.ok(sent.includes('MIXER 2-20 FILL 0.4500 0.2500 0.5000 0.5000'), sent.join('\n'));
+    assert.ok(sent.includes('MIXER 2-20 BLEND multiply'));
+    assert.ok(!sent.some((x) => x.startsWith('PLAY')), 'brez ponovnega nalaganja');
+    await ctl.setLook('preview', { saturation: 0.2 });
+    assert.ok(sent.includes('MIXER 2-10 SATURATION 0.2000'), sent.join('\n'));
+
+    sent.length = 0;
+    await ctl.take('cut');
+    assert.ok(sent.some((x) => /^PLAY 1-20 ".*logo\.png"$/.test(x)), sent.join('\n'));
+    assert.ok(sent.includes('MIXER 1-10 SATURATION 0.2000'));
+    // Plast na programu se spremeni takoj
+    sent.length = 0;
+    await ctl.setLayer('program', lid, { hidden: true });
+    assert.ok(sent.includes('MIXER 1-20 OPACITY 0.0000 4 LINEAR'), sent.join('\n'));
+    // Naslednji vnos brez plasti: AUTO pobledi plasti in vrne barve
+    await ctl.loadPreview(ib.id, e2.id);
+    sent.length = 0;
+    await ctl.take('auto');
+    assert.ok(sent.includes('MIXER 1-20 OPACITY 0 12 LINEAR'), sent.join('\n'));
+    assert.ok(sent.includes('MIXER 1-10 SATURATION 1.0000 12 LINEAR'), sent.join('\n'));
+    await waitFor(() => sent.includes('CLEAR 1-20'), 2000);
+    // Vnos z dvema plastema gre v drugo skupino plasti
+    await ctl.addToGroup(g.id, [ia.id]);
+    const e3 = ctl.playlist.group(g.id).items[2];
+    ctl.playlist.addLayer(e3.id, il.id);
+    ctl.playlist.addLayer(e3.id, il.id);
+    await ctl.loadPreview(ia.id, e3.id);
+    sent.length = 0;
+    await ctl.take('cut');
+    assert.ok(sent.some((x) => /^PLAY 1-41 ".*logo\.png"$/.test(x)), sent.join('\n'));
+    // Brisanje medija odstrani plasti
+    await ctl.clearProgram();
+    await ctl.clearPreview();
+    await ctl.removeItem(il.id);
+    assert.strictEqual(ctl.playlist.findEntry(e3.id).entry.layers.length, 0);
+  } finally {
+    await engine.stop();
+  }
+});

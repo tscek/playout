@@ -1,6 +1,25 @@
-# Test v0.8.0: projekti in projektna mapa
+# Test v0.9.0: plasti in filtri
 
-Namesti novo verzijo čez staro. Dosedanji mediji in playlista so zdaj projekt "Moj projekt".
+Namesti novo verzijo čez staro.
+
+## Novo v 0.9.0
+
+1. **Barve in prosojnost**: pod ▣ Slika so zdaj še *Prosojnost, Svetlost, Kontrast, Nasičenost* in *Ponastavi barve*.
+   Velja za vnos v playlisti. Sprememba se vidi takoj v preview in tudi na programu, če je ta vnos tam.
+2. **Plasti** (▤ Plasti pod preview): nad osnovnim posnetkom vnosa lahko dodaš več medijev, ki se predvajajo hkrati
+   (logo, slika, drug video). Dodaš jih tako, da medij **povlečeš na sliko preview** ali ga izbereš in klikneš *+ Plast*.
+3. Pri izbrani plasti: *Velikost, Levo/desno, Gor/dol, Prosojnost, Mešanje* (multiply, screen, darken, lighten, overlay …),
+   *Svetlost, Kontrast, Nasičenost*, pri videu *ponavljaj* in *brez zvoka*. 👁 skrije plast, ▲▼ spremeni vrstni red, ✕ odstrani.
+   Zgornja plast v seznamu je spredaj. Slike s prosojnim ozadjem (PNG) ostanejo prosojne.
+4. Plasti gredo na program skupaj z vnosom: pri CUT takoj, pri AUTO in samodejnem nadaljevanju s prelivom.
+   Ko gre na program vnos brez plasti, prejšnje plasti zbledijo.
+5. Položaj, barve, mešanje in 👁 veljajo takoj tudi na programu, če je isti vnos v preview
+   (klikni vnos v playlisti, da ga naložiš v preview). Dodana ali odstranjena plast velja na programu ob naslednjem predvajanju.
+6. Pri vnosu v playlisti oznaka ▤ s številom plasti.
+
+Preveri: logo PNG kot plast, video v manjšem okvirju (slika v sliki), multiply in screen, ali je računalnik bolj obremenjen.
+
+# v0.8.0: projekti in projektna mapa
 
 ## Novo v 0.8.0
 

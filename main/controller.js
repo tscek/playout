@@ -19,7 +19,10 @@ const PREVIEW_CHANNEL = 2;
 const LAYER_MAIN = 10;
 const LAYER_PANIC_BG = 990; // črna podlaga za paniko
 const LAYER_PANIC = 991; // logo za paniko
-const MONITOR_CONSUMER = 900; // številka "consumerja" za monitor v vmesniku
+const MONITOR_CONSUMER = 900;
+const LAYER_OVL = [20, 40]; // plasti vnosa; na programu se skupini menjata ob vsakem preklopu (za preliv)
+const MAX_OVL = 16;
+const COLOR_DEFAULT = { opacity: 1, brightness: 1, contrast: 1, saturation: 1 }; // številka "consumerja" za monitor v vmesniku
 
 const TRANSITIONS = {
   MIX: 'Preliv (dissolve)',
@@ -86,6 +89,9 @@ class Controller extends EventEmitter {
     this.folders = [];
     this.folderError = '';
     this._openProject(this.projects.currentId);
+    this._ovl = { 1: { bank: 0, ids: [], keys: [] }, 2: { bank: 0, ids: [], keys: [] } }; // plasti na kanalu
+    this._ovlGen = 0;
+    this._baseMix = {}; // zadnje poslane barve osnovnega posnetka po kanalih
     // src = { groupId, entryId }, če je posnetek prišel iz playliste
     this.program = { item: null, startedAt: 0, src: null }; // kaj je na programu
     this.preview = { item: null, src: null, seek: 0 }; // kaj je v preview
@@ -145,7 +151,9 @@ class Controller extends EventEmitter {
         ? { id: this.preview.item.id, name: this.preview.item.name, type: this.preview.item.type, loop: !!this.preview.item.loop,
           volumeDb: this.preview.item.volumeDb || 0, muted: !!this.preview.item.muted, ...this._specState(this.preview.item, this.preview.src),
           playing: !!this.preview.playing, fit: this.preview.item.fit || 'fit', zoom: this.preview.item.zoom || 1,
-          posX: this.preview.item.posX || 0, posY: this.preview.item.posY || 0, width: this.preview.item.width || 0, height: this.preview.item.height || 0, src: this.preview.src, autoFollow: this.autoCuedId ? 'end' : this.imageTimer ? 'timer' : null }
+          posX: this.preview.item.posX || 0, posY: this.preview.item.posY || 0, width: this.preview.item.width || 0, height: this.preview.item.height || 0, src: this.preview.src,
+          opacity: this.preview.item.opacity ?? 1, brightness: this.preview.item.brightness ?? 1, contrast: this.preview.item.contrast ?? 1, saturation: this.preview.item.saturation ?? 1,
+          layers: ((this._entryOf(this.preview.src) || {}).layers || []), autoFollow: this.autoCuedId ? 'end' : this.imageTimer ? 'timer' : null }
         : null,
       playlist: this.playlist.groups.map((g) => ({
         ...g,
@@ -350,6 +358,11 @@ class Controller extends EventEmitter {
     if (('volumeDb' in p || 'muted' in p) && this.program.src && this.program.src.entryId === entryId) {
       await this._applyItemVolume(this.program.item, 0);
     }
+    if (Object.keys(COLOR_DEFAULT).some((k) => k in p) || p.resetColor) {
+      for (const [ch, sl] of [[PROGRAM_CHANNEL, this.program], [PREVIEW_CHANNEL, this.preview]]) {
+        if (sl.src && sl.src.entryId === entryId) await this._applyBaseMix(ch, sl.item, ch === PROGRAM_CHANNEL ? 4 : 0);
+      }
+    }
     // Postavitev: preview se pripravi znova (program dobi spremembo ob naslednjem predvajanju).
     const look = 'fit' in p || 'zoom' in p || 'posX' in p || 'posY' in p || p.reset;
     if (look && this.preview.src && this.preview.src.entryId === entryId) {
@@ -363,6 +376,7 @@ class Controller extends EventEmitter {
     const f = src ? this.playlist.findEntry(src.entryId) : null;
     const e = f ? f.entry : {};
     const out = { ...item, volumeDb: e.volumeDb || 0, muted: !!e.muted, zoom: e.zoom || 1, posX: e.posX || 0, posY: e.posY || 0 };
+    for (const k of Object.keys(COLOR_DEFAULT)) out[k] = e[k] === undefined ? COLOR_DEFAULT[k] : e[k];
     delete out.fit;
     if (e.fit) out.fit = e.fit;
     delete out.inSec;
@@ -524,7 +538,7 @@ class Controller extends EventEmitter {
       }
       changed = true;
     }
-    const used = new Set(this.playlist.groups.flatMap((g) => g.items.map((e) => e.mediaId)));
+    const used = new Set(this.playlist.groups.flatMap((g) => g.items.flatMap((e) => [e.mediaId, ...(e.layers || []).map((l) => l.mediaId)])));
     if (this.settings.panicSource) used.add(this.settings.panicSource);
     for (const s of [this.program, this.preview]) if (s && s.item) used.add(s.item.id);
     const drop = new Set(lost.filter((it) => it.rel && !used.has(it.id)));
@@ -1141,6 +1155,8 @@ class Controller extends EventEmitter {
     const seek = this.preview.seek || 0;
     const src = this.preview.src;
     await this.engine.send(`LOAD ${PREVIEW_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item, seek, src)}`);
+    await this._applyBaseMix(PREVIEW_CHANNEL, item, 0);
+    await this._syncPreviewLayers(src);
     if (mode === 'bg') {
       // CasparCG 2.5 napaka: če AUTO pripravimo takoj po zagonu posnetka s SEEK, motor preklopi takoj.
       // Zato počakamo, da program teče vsaj 0,7 s.
@@ -1202,6 +1218,7 @@ class Controller extends EventEmitter {
     if (this.engine.status === 'running') {
       await this.engine.send(`CLEAR ${PREVIEW_CHANNEL}-${LAYER_MAIN}`);
       await this.engine.send(`LOADBG ${PROGRAM_CHANNEL}-${LAYER_MAIN} EMPTY`);
+      await this._syncPreviewLayers(null);
     }
   }
 
@@ -1233,6 +1250,7 @@ class Controller extends EventEmitter {
         await this.engine.send(this._playCommand(item, this.preview.seek || 0, kind === 'auto' ? this.transitionPart() : '', src));
       }
       await this._applyItemVolume(item, kind === 'auto' ? this.settings.transitionFrames : 0);
+      await this._layersOnAir(item, src, kind === 'auto' ? this.settings.transitionFrames : 0);
     } catch (e) {
       this._error(`Prehod ni uspel: ${e.message}`);
     }
@@ -1270,6 +1288,7 @@ class Controller extends EventEmitter {
     try {
       await this.engine.send(this._playCommand(item, inF, k === 'auto' ? this.transitionPart() : '', src));
       await this._applyItemVolume(item, k === 'auto' ? this.settings.transitionFrames : 0);
+      await this._layersOnAir(item, src, k === 'auto' ? this.settings.transitionFrames : 0);
     } catch (e) {
       this._error(`Predvajanje ni uspelo: ${e.message}`);
     }
@@ -1301,8 +1320,10 @@ class Controller extends EventEmitter {
     if (withTransition) {
       const dur = Math.max(1, Math.round(Number(this.settings.transitionFrames) || 12));
       await this.engine.send(`PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN} EMPTY MIX ${dur} LINEAR`);
+      await this._layersOut(PROGRAM_CHANNEL, dur);
     } else {
       await this.engine.send(`CLEAR ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
+      await this._layersOut(PROGRAM_CHANNEL, 0);
     }
     // Ozadje programa je bilo morda izpraznjeno; preview ponovno pripravimo.
     if (this.preview.item) {
@@ -1310,6 +1331,215 @@ class Controller extends EventEmitter {
         await this._cue();
       } catch { /* ni kritično */ }
     }
+  }
+
+  // ---------- plasti in barve ----------
+
+  _entryOf(src) {
+    const f = src ? this.playlist.findEntry(src.entryId) : null;
+    return f ? f.entry : null;
+  }
+
+  /** Plasti vnosa (od spodaj navzgor) z mediji iz knjižnice. */
+  _overlays(src) {
+    const e = this._entryOf(src);
+    if (!e || !e.layers) return [];
+    return e.layers
+      .map((l) => ({ l, item: this.library.items.find((x) => x.id === l.mediaId) }))
+      .filter((x) => x.item)
+      .slice(0, MAX_OVL);
+  }
+
+  /** Položaj plasti za MIXER FILL (deli zaslona), razmerje slike ohranjeno. */
+  _layerFill(l, item) {
+    const W = 1920;
+    const H = 1080;
+    const z = Number(l.scale) || 1;
+    let dw = z;
+    let dh = z;
+    if (item.width && item.height) {
+      const k = Math.min(W / item.width, H / item.height);
+      dw = ((item.width * k) / W) * z;
+      dh = ((item.height * k) / H) * z;
+    }
+    const x = 0.5 - dw / 2 + (Number(l.posX) || 0) / 100;
+    const y = 0.5 - dh / 2 + (Number(l.posY) || 0) / 100;
+    return [x, y, dw, dh];
+  }
+
+  /** MIXER ukazi za barve in prosojnost. */
+  _colorCmds(ch, L, c, frames = 0, opacity = null) {
+    const t = frames ? ` ${Math.round(frames)} LINEAR` : '';
+    const f = (v) => Number(v).toFixed(4);
+    const o = opacity === null ? (c.opacity === undefined ? 1 : c.opacity) : opacity;
+    return [
+      `MIXER ${ch}-${L} OPACITY ${f(o)}${t}`,
+      `MIXER ${ch}-${L} BRIGHTNESS ${f(c.brightness === undefined ? 1 : c.brightness)}${t}`,
+      `MIXER ${ch}-${L} CONTRAST ${f(c.contrast === undefined ? 1 : c.contrast)}${t}`,
+      `MIXER ${ch}-${L} SATURATION ${f(c.saturation === undefined ? 1 : c.saturation)}${t}`,
+    ];
+  }
+
+  /** Vsi MIXER ukazi za plast (položaj, mešanje, barve, jakost). */
+  _layerMixCmds(ch, L, l, item, frames = 0, opacity = null) {
+    const [x, y, w, h] = this._layerFill(l, item).map((v) => v.toFixed(4));
+    const g = l.muted ? 0 : dbToGain(l.volumeDb);
+    const op = opacity === null ? (l.hidden ? 0 : l.opacity) : opacity;
+    return [
+      `MIXER ${ch}-${L} FILL ${x} ${y} ${w} ${h}`,
+      `MIXER ${ch}-${L} BLEND ${l.blend || 'normal'}`,
+      ...this._colorCmds(ch, L, l, frames, op),
+      `MIXER ${ch}-${L} VOLUME ${g.toFixed(4)}`,
+    ];
+  }
+
+  async _sendAll(cmds) {
+    for (const c of cmds) await this.engine.send(c);
+  }
+
+  _layerPlayCmd(ch, L, l, item) {
+    return `PLAY ${ch}-${L} ${quote(mediaPath(item.path))}${item.type !== 'image' && l.loop ? ' LOOP' : ''}`;
+  }
+
+  /** Barve in prosojnost osnovnega posnetka (samo če so se spremenile). */
+  async _applyBaseMix(ch, item, frames = 0) {
+    const c = {};
+    for (const k of Object.keys(COLOR_DEFAULT)) c[k] = item && item[k] !== undefined ? item[k] : COLOR_DEFAULT[k];
+    const key = JSON.stringify(c);
+    if (this._baseMix[ch] === key) return;
+    if (this._baseMix[ch] === undefined && key === JSON.stringify(COLOR_DEFAULT)) {
+      this._baseMix[ch] = key; // motor je pravkar zagnan: privzete vrednosti že veljajo
+      return;
+    }
+    this._baseMix[ch] = key;
+    await this._sendAll(this._colorCmds(ch, LAYER_MAIN, c, frames));
+  }
+
+  /** Plasti v preview: posodobi samo, kar se je spremenilo (videi ne začnejo znova po nepotrebnem). */
+  async _syncPreviewLayers(src) {
+    const ch = PREVIEW_CHANNEL;
+    const list = this._overlays(src);
+    const st = this._ovl[ch];
+    const base = LAYER_OVL[0];
+    const keys = [];
+    for (let i = 0; i < list.length; i++) {
+      const { l, item } = list[i];
+      const L = base + i;
+      const key = `${item.path}|${l.loop}`;
+      keys.push(key);
+      await this._sendAll(this._layerMixCmds(ch, L, l, item));
+      if (st.keys[i] !== key) await this.engine.send(this._layerPlayCmd(ch, L, l, item));
+    }
+    for (let i = list.length; i < st.keys.length; i++) await this.engine.send(`CLEAR ${ch}-${base + i}`);
+    this._ovl[ch] = { bank: 0, ids: list.map((x) => x.l.id), keys };
+  }
+
+  /** Plasti gredo na program skupaj z osnovnim posnetkom (s prelivom v drugo skupino plasti). */
+  async _layersOnAir(item, src, frames = 0) {
+    if (this.engine.status !== 'running') return;
+    await this._applyBaseMix(PROGRAM_CHANNEL, item, frames);
+    const ch = PROGRAM_CHANNEL;
+    const list = this._overlays(src);
+    const st = this._ovl[ch];
+    if (!list.length && !st.ids.length) return;
+    const gen = ++this._ovlGen;
+    const bank = st.ids.length ? 1 - st.bank : st.bank;
+    const base = LAYER_OVL[bank];
+    for (let i = 0; i < list.length; i++) {
+      const { l, item: it } = list[i];
+      const L = base + i;
+      await this._sendAll(this._layerMixCmds(ch, L, l, it, 0, frames ? 0 : null));
+      await this.engine.send(this._layerPlayCmd(ch, L, l, it));
+      if (frames) await this._sendAll(this._colorCmds(ch, L, l, frames, l.hidden ? 0 : l.opacity).slice(0, 1));
+    }
+    const old = { base: LAYER_OVL[st.bank], n: st.ids.length };
+    this._ovl[ch] = { bank, ids: list.map((x) => x.l.id), keys: list.map((x) => `${x.item.path}|${x.l.loop}`) };
+    if (old.n && old.base !== base) await this._fadeOutLayers(ch, old.base, old.n, frames, gen);
+  }
+
+  async _fadeOutLayers(ch, base, n, frames, gen) {
+    const clear = async () => {
+      for (let i = 0; i < n; i++) await this.engine.send(`CLEAR ${ch}-${base + i}`).catch(() => {});
+    };
+    if (!frames) return clear();
+    for (let i = 0; i < n; i++) await this.engine.send(`MIXER ${ch}-${base + i} OPACITY 0 ${Math.round(frames)} LINEAR`);
+    const ms = (frames / fpsOf(this.settings.videoMode)) * 1000 + 300;
+    const t = setTimeout(() => {
+      if (gen === this._ovlGen && this.engine.status === 'running') clear();
+    }, ms);
+    if (t.unref) t.unref();
+  }
+
+  /** Program ali preview brez plasti (počisti). */
+  async _layersOut(ch, frames = 0) {
+    const st = this._ovl[ch];
+    if (!st.ids.length) return;
+    const gen = ++this._ovlGen;
+    this._ovl[ch] = { bank: st.bank, ids: [], keys: [] };
+    await this._fadeOutLayers(ch, LAYER_OVL[st.bank], st.ids.length, frames, gen);
+    await this._applyBaseMix(ch, null, frames).catch(() => {});
+  }
+
+  /** Spremembe plasti, ki ne zahtevajo ponovnega nalaganja (položaj, barve ...), veljajo takoj, tudi na programu. */
+  async _liveLayerMix(entryId, layerId) {
+    if (this.engine.status !== 'running') return;
+    for (const [ch, slot] of [[PROGRAM_CHANNEL, this.program], [PREVIEW_CHANNEL, this.preview]]) {
+      if (!slot.src || slot.src.entryId !== entryId) continue;
+      const st = this._ovl[ch];
+      const i = st.ids.indexOf(layerId);
+      if (i === -1) continue;
+      const x = this._overlays(slot.src).find((o) => o.l.id === layerId);
+      if (!x) continue;
+      await this._sendAll(this._layerMixCmds(ch, LAYER_OVL[st.bank] + i, x.l, x.item, ch === PROGRAM_CHANNEL ? 4 : 0));
+    }
+  }
+
+  _layerSlot(which) {
+    const slot = which === 'program' ? this.program : this.preview;
+    if (!slot.item) this._error(which === 'program' ? 'Program je prazen' : 'Preview je prazen');
+    if (!slot.src || !this.playlist.findEntry(slot.src.entryId)) this._error('Plasti ima samo vnos v playlisti. Dodaj posnetek v playlisto.');
+    return slot;
+  }
+
+  /** Doda medij kot plast na vrh vnosa v preview (ali na programu). */
+  async addLayer(which, mediaId) {
+    const slot = this._layerSlot(which);
+    const it = this._item(mediaId);
+    if (it.type === 'audio') this._error('Zvok ne more biti plast slike');
+    if (!it.width && !it.height) this._probe(it);
+    const l = this.playlist.addLayer(slot.src.entryId, mediaId);
+    this._savePlaylist();
+    await this._layersChanged(slot.src.entryId);
+    return l.id;
+  }
+
+  async setLayer(which, layerId, patch) {
+    const slot = this._layerSlot(which);
+    const p = patch || {};
+    if (!this.playlist.setLayer(slot.src.entryId, layerId, p)) this._error('Plast ne obstaja');
+    this._savePlaylist();
+    if ('loop' in p) await this._layersChanged(slot.src.entryId);
+    else await this._liveLayerMix(slot.src.entryId, layerId);
+  }
+
+  async removeLayer(which, layerId) {
+    const slot = this._layerSlot(which);
+    this.playlist.removeLayer(slot.src.entryId, layerId);
+    this._savePlaylist();
+    await this._layersChanged(slot.src.entryId);
+  }
+
+  async moveLayer(which, layerId, dir) {
+    const slot = this._layerSlot(which);
+    this.playlist.moveLayer(slot.src.entryId, layerId, dir);
+    this._savePlaylist();
+    await this._layersChanged(slot.src.entryId);
+  }
+
+  /** Dodana/odstranjena/premaknjena plast: preview takoj, program ob naslednjem predvajanju. */
+  async _layersChanged(entryId) {
+    if (this.engine.status !== 'running') return;
+    if (this.preview.src && this.preview.src.entryId === entryId) await this._syncPreviewLayers(this.preview.src);
   }
 
   // ---------- akcije ob vnosih ----------
@@ -1498,6 +1728,8 @@ class Controller extends EventEmitter {
 
   async _onEngineReady() {
     this._lastPgmPath = null;
+    this._baseMix = {};
+    this._ovl = { 1: { bank: 0, ids: [], keys: [] }, 2: { bank: 0, ids: [], keys: [] } };
     await this._addMonitors();
     if (!this.panic) await this._applyMaster().catch(() => {});
     if (this.panic) {
@@ -1596,8 +1828,10 @@ class Controller extends EventEmitter {
   _autoAdvanced() {
     const { item, src } = this.preview;
     this.engine._log(`Samodejno naprej: ${item.name}`);
+    const frames = this._followCut() ? 0 : this.settings.transitionFrames;
     this._onAir(item, src, this.preview.seek || 0);
     this._applyItemVolume(item, 4).catch(() => {});
+    this._layersOnAir(item, src, frames).catch(() => {});
     this._afterTake(item, src).catch(() => {});
   }
 
@@ -1616,6 +1850,7 @@ class Controller extends EventEmitter {
       await this.engine.send(this._playCommand(p.item, seek, '', p.src));
       if (p.paused) await this.engine.send(`PAUSE ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
       await this._applyItemVolume(p.item, 0);
+      await this._layersOnAir(p.item, p.src, 0);
     } catch (e) {
       this.lastError = `Obnovitev programa ni uspela: ${e.message}`;
       this._changed();
