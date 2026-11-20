@@ -1083,3 +1083,34 @@ test('ATEM ključi kot preseti', () => {
   assert.deepStrictEqual(presetStep('a1.dskAuto.2', devs), { type: 'atem', deviceId: 'a1', cmd: 'dskAuto', num: 2 });
   assert.strictEqual(presetStep('a1.dskAuto.9', devs), null);
 });
+
+test('napis na vnosu in velikost napisa', async () => {
+  const { ctl, engine, sent, media } = makeController();
+  try {
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([media]);
+    const g = ctl.playlist.groups[0];
+    const mid = ctl.library.items[0].id;
+    await ctl.addToGroup(g.id, [mid, mid, mid]);
+    const tid = ctl.addTitle({ template: 'klasicni', f0: 'Janez', size: 1.3 });
+    const [e1, e2, e3] = g.items;
+    await ctl.setEntry(e1.id, { titleId: tid });
+    await ctl.setEntry(e2.id, { titleId: tid, titleOut: 0.3 });
+    assert.strictEqual(ctl.playlist.findEntry(e2.id).entry.titleOut, 0.3);
+    await ctl.playDirect(mid, 'cut', e1.id);
+    await waitFor(() => ctl._titleOnLayer(tid) !== null);
+    await waitFor(() => sent.includes('MIXER 1-60 FILL -0.021 -0.27 1.3 1.3')); // 130 % ob levem spodnjem robu
+    const n = sent.filter((c) => c.startsWith('CG 1-60 ADD')).length;
+    await ctl.playDirect(mid, 'cut', e2.id); // isti napis ostane, ne začne znova
+    assert.strictEqual(sent.filter((c) => c.startsWith('CG 1-60 ADD')).length, n);
+    await waitFor(() => sent.includes('CG 1-60 STOP 0'), 2000); // titleOut 0,3 s
+    await ctl.playDirect(mid, 'cut', e1.id);
+    await waitFor(() => sent.filter((c) => c.startsWith('CG 1-6') && c.includes(' ADD ')).length > n);
+    await ctl.playDirect(mid, 'cut', e3.id); // vnos brez napisa: napis gre dol
+    await waitFor(() => sent.filter((c) => c === 'CG 1-60 STOP 0' || c === 'CG 1-61 STOP 0').length >= 2);
+  } finally {
+    ctl._unwatch && ctl._unwatch();
+    await engine.stop();
+  }
+});

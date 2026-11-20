@@ -71,6 +71,18 @@ const methods = {
     };
   },
 
+  /** Pošlje napis in nastavi njegovo velikost (MIXER FILL okoli roba, kjer napis stoji). */
+  async _titleSend(ch, L, t, op) {
+    await this.engine.send(this._titleCmd(ch, L, t, op));
+    const k = Number(t.size) || 1;
+    const al = t.align || 'center';
+    const ax = /left|^tl$|^bl$/.test(al) ? 0.07 : /right|^tr$|^br$/.test(al) ? 0.93 : 0.5;
+    const mid = t.template === 'naslov' || (t.template === 'ura' && al === 'center');
+    const ay = mid ? 0.5 : /^t/.test(al) ? 0.08 : 0.9;
+    const r = (v) => Math.round(v * 10000) / 10000;
+    await this.engine.send(`MIXER ${ch}-${L} FILL ${r(ax * (1 - k))} ${r(ay * (1 - k))} ${k} ${k}`);
+  },
+
   _titleCmd(ch, L, t, op) {
     const data = amcpString(JSON.stringify(this._titleData(t)));
     if (op === 'update') return `CG ${ch}-${L} UPDATE 0 ${data}`;
@@ -130,8 +142,8 @@ const methods = {
   async _refreshTitle(t, reload) {
     if (this.engine.status !== 'running') return;
     const L = this._titleOnLayer(t.id);
-    if (L !== null) await this.engine.send(this._titleCmd(PROGRAM_CHANNEL, L, t, reload ? 'add' : 'update')).catch(() => {});
-    if (this.titlePvw === t.id) await this.engine.send(this._titleCmd(PREVIEW_CHANNEL, LAYER_TITLE, t, reload ? 'add' : 'update')).catch(() => {});
+    if (L !== null) await this._titleSend(PROGRAM_CHANNEL, L, t, reload ? 'add' : 'update').catch(() => {});
+    if (this.titlePvw === t.id) await this._titleSend(PREVIEW_CHANNEL, LAYER_TITLE, t, reload ? 'add' : 'update').catch(() => {});
   },
 
   // ---------- na program / z njega ----------
@@ -152,7 +164,7 @@ const methods = {
     this.titleSlots.set(L, { titleId: id, closing: false, gen });
     this._changed();
     try {
-      await this.engine.send(this._titleCmd(PROGRAM_CHANNEL, L, t, 'add'));
+      await this._titleSend(PROGRAM_CHANNEL, L, t, 'add');
     } catch (e) {
       this.titleSlots.delete(L);
       this._changed();
@@ -211,7 +223,7 @@ const methods = {
     this.titlePvw = t ? t.id : null;
     this._changed();
     if (this.engine.status !== 'running') return;
-    if (t) await this.engine.send(this._titleCmd(PREVIEW_CHANNEL, LAYER_TITLE, t, 'add'));
+    if (t) await this._titleSend(PREVIEW_CHANNEL, LAYER_TITLE, t, 'add');
     else await this.engine.send(`CLEAR ${PREVIEW_CHANNEL}-${LAYER_TITLE}`).catch(() => {});
   },
 
@@ -227,11 +239,11 @@ const methods = {
         this.titleSlots.delete(L);
         continue;
       }
-      await this.engine.send(this._titleCmd(PROGRAM_CHANNEL, L, t, 'add')).catch(() => {});
+      await this._titleSend(PROGRAM_CHANNEL, L, t, 'add').catch(() => {});
     }
     if (this.titlePvw) {
       const t = this.titles.get(this.titlePvw);
-      if (t) await this.engine.send(this._titleCmd(PREVIEW_CHANNEL, LAYER_TITLE, t, 'add')).catch(() => {});
+      if (t) await this._titleSend(PREVIEW_CHANNEL, LAYER_TITLE, t, 'add').catch(() => {});
       else this.titlePvw = null;
     }
   },

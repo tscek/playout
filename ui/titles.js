@@ -279,6 +279,12 @@ function buildTitleEditor(box, t, on) {
   dur.onchange = () => titlePatch(t.id, { duration: Number(dur.value) || 0 });
   row('Samodejno umakni po (s)', dur);
 
+  const size = document.createElement('select');
+  size.dataset.key = 'size';
+  for (const [v, l] of [[0.6, 'zelo majhen (60 %)'], [0.75, 'manjši (75 %)'], [0.9, 'malo manjši (90 %)'], [1, 'običajen'], [1.15, 'malo večji (115 %)'], [1.3, 'večji (130 %)'], [1.5, 'velik (150 %)']]) size.add(new Option(l, String(v)));
+  size.onchange = () => titlePatch(t.id, { size: Number(size.value) });
+  row('Velikost', size);
+
   // Logotip
   const lg = document.createElement('select');
   lg.dataset.key = 'logo';
@@ -338,6 +344,11 @@ function syncTitleEditor(box, t) {
       inp.value = t[k] || b[k];
       inp.disabled = !(t.bg || t.accent || t.text);
     } else if (k === 'duration') inp.value = t.duration || 0;
+    else if (k === 'size') {
+      const v = String(t.size || 1);
+      if (![...inp.options].some((o) => o.value === v)) inp.add(new Option(`${Math.round(Number(v) * 100)} %`, v), 0);
+      inp.value = v;
+    }
     else if (k === 'secondsTxt') inp.value = `${Math.floor(t.seconds / 60)}:${String(t.seconds % 60).padStart(2, '0')}`;
     else inp.value = t[k] == null ? '' : t[k];
   }

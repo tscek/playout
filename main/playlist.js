@@ -40,6 +40,9 @@ function normEntry(e) {
     startAction: typeof e.startAction === 'string' && e.startAction ? e.startAction : null, // akcija ob začetku
     endAction: typeof e.endAction === 'string' && e.endAction ? e.endAction : null, // akcija ob koncu
     endLead: Math.max(0, Math.min(30, optSeconds(e.endLead) || 0)), // koliko sekund pred koncem
+    titleId: typeof e.titleId === 'string' && e.titleId ? e.titleId : null, // napis, ki gre na zaslon s tem vnosom
+    titleIn: Math.max(0, Math.min(3600, optSeconds(e.titleIn) || 0)), // čez koliko sekund
+    titleOut: Math.max(0, Math.min(3600, optSeconds(e.titleOut) || 0)), // koliko časa ostane (0 = do konca vnosa)
     fadeIn: optFade(e.fadeIn),
     fadeOut: optFade(e.fadeOut),
     ...normLook(e),
@@ -203,6 +206,9 @@ class Playlist {
     if ('fadeIn' in patch) e.fadeIn = optFade(patch.fadeIn);
     if ('fadeOut' in patch) e.fadeOut = optFade(patch.fadeOut);
     if ('endLead' in patch) e.endLead = Math.max(0, Math.min(30, optSeconds(patch.endLead) || 0));
+    if ('titleId' in patch) e.titleId = typeof patch.titleId === 'string' && patch.titleId ? patch.titleId : null;
+    if ('titleIn' in patch) e.titleIn = Math.max(0, Math.min(3600, optSeconds(patch.titleIn) || 0));
+    if ('titleOut' in patch) e.titleOut = Math.max(0, Math.min(3600, optSeconds(patch.titleOut) || 0));
     if (patch.reset) Object.assign(patch, { fit: null, zoom: 1, posX: 0, posY: 0 });
     if (patch.resetColor) Object.assign(patch, { opacity: 1, brightness: 1, contrast: 1, saturation: 1 });
     for (const k of ['volumeDb', 'muted', 'fit', 'zoom', 'posX', 'posY', ...COLOR_KEYS]) {

@@ -1,3 +1,35 @@
+# Test v0.14.0: slideshow, plošča ATEM, preseti, napisi na vnosu
+
+Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.13.0 in v0.12.0 (opisi spodaj).
+
+## Novo v 0.14.0
+
+1. **Slideshow**: v Medijih izberi mapo s slikami (ali poišči slike z iskanjem) in klikni **🖼 Slideshow**
+   (ali 🖼 v vrstici mape). Izbereš ime, samodejno/ročno menjavo, trajanje slike, dinamični zoom, zamegljeno ozadje in ponavljanje.
+   Nastane nova skupina v playlisti; *▶ v preview* in CUT/AUTO, pa gre naprej sam.
+   - **Zamegljeno ozadje**: pokončne in ozke slike dobijo ob straneh isto sliko, močno zamegljeno in malo temnejšo (namesto črnine).
+     Slike 16:9 ga ne potrebujejo. Velja tudi za posamezen vnos: ⚙ → *Slika in barve* → *Prileganje* → *Ohrani razmerje + zamegljeno ozadje*.
+   - **Dinamični zoom**: slika se počasi približuje (vsakič proti drugemu delu slike), naslednja oddaljuje, in tako naprej.
+     Pri prelivu nič ne poskoči.
+   - V glavi skupine sta kljukici **zoom** in **zamegli** (vidni, če so v skupini slike).
+   - Prosim, preveri na Windows: ali zoom teče gladko (brez trzanja) in kako hitro se pokažejo velike fotografije (npr. 24 MP iz fotoaparata).
+2. **Plošča ATEM**: zavihek **ATEM** levo spodaj (poleg Napisov) in na tablici.
+   Vrstici **PROGRAM** (rdeča) in **PREVIEW** (zelena) z imeni vhodov iz ATEM, **CUT**, **AUTO** (s črto napredka), **FTB** (utripa, ko je črno),
+   vrsta prehoda MIX/DIP/WIPE, ključi **KEY 1–4** in **DSK** (vklop takoj ali *AUTO* s prehodom), **AUX**, makri.
+   Barve se sproti osvežujejo tudi, ko preklapljaš na samem ATEM ali v ATEM Software Control.
+   - ATEM dodaš v oknu *Akcije* (*+ ATEM*, IP naslov), če ga še nisi.
+   - **Prosim, preveri na ATEM**: vse gumbe, in ali KEY/DSK ustrezajo tistim na mešalniku. Tega nisem mogel preizkusiti na pravem ATEM.
+3. **Preseti** (okno *Akcije* → *Preseti*): ukazi, ki nastanejo sami iz imen v napravah, za vse projekte:
+   ATEM (AUTO/CUT na vhod, preview, AUX, makri, FTB, DSK, KEY), XR18 (utišaj/vklopi kanal z imenom iz mize, buse, LR, DCA, mute group).
+   - ▶ preset takoj izvede, ＋ iz njega naredi gumb akcije (ime sledi imenu v napravi).
+   - Preseti so na voljo tudi kot *akcija ob začetku/koncu vnosa*, v bližnjicah, v koraku akcije in na tablici (zavihek *Akcije*).
+   - Ko preimenuješ vhod v ATEM ali kanal na XR18, se ime preseta spremeni samo. Ko naprava ni povezana, se uporabi zadnje znano ime.
+   - **Prosim, preveri na ATEM in XR18** (tega nisem mogel preizkusiti na pravi opremi).
+4. **Napis na vnosu**: ⚙ pri vnosu → *Čas in konec* → **Napis**, *po* (sekunde od začetka) in *za* (koliko časa, 0 = ves vnos).
+   Napis gre na zaslon z vnosom in dol, ko vnos zamenjaš. Če ima naslednji vnos isti napis, ostane (ne animira znova).
+   Vnos z napisom ima v playlisti oznako *Aa*.
+5. **Velikost napisa**: pri napisu (zavihek Napisi) izberi *Velikost* od 60 % do 150 %. Napis ostane ob istem robu zaslona.
+
 # Test v0.13.0: key & fill za ATEM, tablica
 
 Namesti novo verzijo čez staro. Vsebuje tudi napise iz v0.12.0 (opis spodaj).

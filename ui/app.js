@@ -576,6 +576,7 @@ function renderPlaylist() {
       else if (e.volumeDb && e.type !== 'image') li.append(el('span', 'badge info', fmtDb(e.volumeDb)));
       if (e.type !== 'audio' && (e.fit && e.fit !== 'fit' || e.zoom !== 1 || e.posX || e.posY)) li.append(el('span', 'badge info', '▣'));
       if (e.end) li.append(el('span', 'badge info end', END_ICON[e.end]));
+      if (e.titleId) li.append(el('span', 'badge info', 'Aa'));
       const gear = el('button', 'item-btn' + (editEntryId === e.id && $('#dlg-entry').open ? ' active' : ''), '⚙');
       gear.title = 'Nastavitve vnosa: slika, barve, plasti, čas, konec, zvok';
       gear.onclick = (ev) => {
@@ -691,6 +692,33 @@ function entryEditor(e, g) {
   lead.onblur = () => setTimeout(render, 0);
   endActL.append(document.createTextNode('Akcija ob koncu'), endActSel, lead, document.createTextNode('s prej'));
   box.append(startL, endActL);
+
+  // Napis, pripet na vnos
+  const tl = (state.titles && state.titles.items) || [];
+  const ttlL = el('label', 'group-opt' + (e.titleId ? ' on' : ''));
+  ttlL.title = 'Napis gre na zaslon skupaj s tem vnosom in z njega, ko vnos zamenjaš (če ima naslednji vnos isti napis, ostane).';
+  const ttlSel = el('select', 'mini-select');
+  ttlSel.add(new Option('—', ''));
+  for (const t of tl) ttlSel.add(new Option(t.label || t.f0 || t.template, t.id));
+  if (e.titleId && !tl.some((t) => t.id === e.titleId)) ttlSel.add(new Option('(izbrisan napis)', e.titleId));
+  ttlSel.value = e.titleId || '';
+  ttlSel.onchange = () => set({ titleId: ttlSel.value || null });
+  const secInput = (key, title) => {
+    const n = el('input');
+    n.type = 'number';
+    n.min = 0;
+    n.max = 3600;
+    n.step = 0.5;
+    n.title = title;
+    n.value = e[key] || 0;
+    n.onchange = () => set({ [key]: parseFloat(n.value) || 0 });
+    n.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === 'Escape') n.blur(); };
+    n.onblur = () => setTimeout(render, 0);
+    return n;
+  };
+  ttlL.append(document.createTextNode('Napis'), ttlSel, document.createTextNode('po'), secInput('titleIn', 'Koliko sekund po začetku vnosa'),
+    document.createTextNode('s, za'), secInput('titleOut', '0 = do konca vnosa'), document.createTextNode('s (0 = ves vnos)'));
+  box.append(ttlL);
   if (!acts.length) box.append(el('span', 'hint-inline', 'Akcije pripraviš z gumbom "Akcije" zgoraj.'));
 
   if (e.type === 'image') {

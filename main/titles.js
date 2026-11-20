@@ -91,6 +91,7 @@ function normTitle(t) {
     text: isColor(x.text) ? x.text : null,
     logo: x.logo === '' ? '' : typeof x.logo === 'string' && x.logo ? x.logo : null,
     duration: Number.isFinite(dur) && dur > 0 ? Math.min(3600, Math.round(dur)) : 0, // s, 0 = ostane
+    size: Number.isFinite(Number(x.size)) && Number(x.size) > 0 ? Math.max(0.4, Math.min(2, Math.round(Number(x.size) * 100) / 100)) : 1, // 1 = običajna velikost
     // ura: clock = trenutni čas, until = odštevanje do ure (target), timer = odštevanje (seconds), stopwatch = štoparica
     mode: CLOCK_MODES.includes(x.mode) ? x.mode : 'clock',
     target: typeof x.target === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(x.target) ? x.target : '',
@@ -98,7 +99,7 @@ function normTitle(t) {
   };
 }
 
-const TITLE_KEYS = ['template', 'f0', 'f1', 'f2', 'align', 'bg', 'accent', 'text', 'logo', 'duration', 'mode', 'target', 'seconds'];
+const TITLE_KEYS = ['template', 'f0', 'f1', 'f2', 'align', 'bg', 'accent', 'text', 'logo', 'duration', 'mode', 'target', 'seconds', 'size'];
 
 class Titles {
   constructor(data) {

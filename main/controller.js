@@ -1347,6 +1347,7 @@ class Controller extends EventEmitter {
     const offset = (seekFrames / fpsOf(this.settings.videoMode)) * 1000;
     this.program = { item: { ...item }, startedAt: Date.now() - offset, wallStart: Date.now(), src: src || null };
     this._armEntryActions();
+    this._armEntryTitle();
     this.times[PROGRAM_CHANNEL] = null;
     this.lastError = '';
     this._changed();
@@ -1436,6 +1437,7 @@ class Controller extends EventEmitter {
     this.autoCuedId = null;
     this.program = { item: null, startedAt: 0, src: null };
     this.times[PROGRAM_CHANNEL] = null;
+    this._armEntryTitle();
     this._changed();
     if (this.engine.status !== 'running') return;
     if (withTransition) {
@@ -1859,6 +1861,48 @@ class Controller extends EventEmitter {
     if (spec.loop) return; // zanka se ne konča
     this._endPending = { entryId: e.id, actionId: e.endAction, lead: e.endLead || 0 };
     this._scheduleImageEnd();
+  }
+
+  /**
+   * Napis, pripet na vnos: gre na zaslon titleIn sekund po začetku vnosa in z njega po titleOut sekundah
+   * ali ko gre z programa vnos (razen če ima naslednji vnos isti napis; takrat ostane).
+   */
+  _armEntryTitle() {
+    for (const t of this._entryTitleTimers || []) clearTimeout(t);
+    this._entryTitleTimers = [];
+    const p = this.program;
+    const f = p.src ? this.playlist.findEntry(p.src.entryId) : null;
+    const e = f ? f.entry : null;
+    const want = e && e.titleId && this.titles && this.titles.get(e.titleId) ? e.titleId : null;
+    const prev = this._entryTitle || null;
+    if (prev && prev !== want) {
+      this._entryTitle = null;
+      if (this._titleOnLayer(prev) !== null) this.titleOff(prev).catch(() => {});
+    }
+    if (!want) return;
+    const later = (sec, fn) => {
+      const t = setTimeout(fn, sec * 1000);
+      if (t.unref) t.unref();
+      this._entryTitleTimers.push(t);
+    };
+    const stays = prev === want && this._titleOnLayer(want) !== null;
+    const start = stays ? 0 : e.titleIn || 0;
+    if (!stays) {
+      const on = () => {
+        if (this.engine.status !== 'running') return;
+        this._entryTitle = want;
+        this.titleOn(want).catch(() => {});
+      };
+      if (start) later(start, on);
+      else on();
+    }
+    if (e.titleOut) {
+      later(start + e.titleOut, () => {
+        if (this._entryTitle !== want) return;
+        this._entryTitle = null;
+        this.titleOff(want).catch(() => {});
+      });
+    }
   }
 
   /** Slika nima časa iz motorja: akcijo ob koncu sproži časovnik (upošteva premor). */
