@@ -1022,3 +1022,55 @@ test('preseti iz imen v ATEM in XR18', async () => {
   await assert.rejects(am2.run('preset:neobstaja.cut'), /ne obstaja/);
   assert.ok(!('cache' in am2.getState().devices[0]), 'stanje za vmesnik je brez shranjenih imen');
 });
+
+test('slideshow: skupina iz slik, zamegljeno ozadje, dinamični zoom', async () => {
+  const { ctl, engine, sent, dir } = makeController();
+  try {
+    const png = (name, w, h) => {
+      const b = Buffer.alloc(64);
+      b.writeUInt32BE(0x89504e47, 0);
+      b.writeUInt32BE(w, 16);
+      b.writeUInt32BE(h, 20);
+      const p = path.join(dir, name);
+      fs.writeFileSync(p, b);
+      return p;
+    };
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([png('pokoncna.png', 720, 1080), png('siroka.png', 1920, 1080), path.join(dir, 'clip one.mp4')]);
+    await waitFor(() => ctl.library.items.every((i) => i.type !== 'image' || i.width));
+    const gid = await ctl.createSlideshow({ name: 'Izlet', mediaIds: ctl.library.items.map((i) => i.id), seconds: 4 });
+    const g = ctl.playlist.group(gid);
+    assert.strictEqual(g.items.length, 2); // video ni slika
+    assert.deepStrictEqual([g.end, g.imageSeconds, g.kenBurns, g.blur, g.loop], ['mix', 4, true, true, false]);
+
+    const portrait = ctl._slotItem(ctl.library.items.find((i) => i.name === 'pokoncna.png'), { groupId: gid, entryId: g.items[0].id });
+    assert.strictEqual(portrait.fit, 'blur');
+    assert.ok(portrait.kenBurns);
+    assert.match(ctl._fitFilter(portrait), /^format=rgba,scale=720:1080,pad=1920:1080:600:0:color=black@0/);
+    assert.match(ctl._blurArgs(portrait), /\.still" VF ".*boxblur/);
+    const wide = ctl._slotItem(ctl.library.items.find((i) => i.name === 'siroka.png'), { groupId: gid, entryId: g.items[1].id });
+    assert.strictEqual(ctl._blurArgs(wide), null); // 16:9 ne potrebuje ozadja
+
+    await ctl.cueGroup(gid);
+    assert.ok(sent.some((c) => c.startsWith('PLAY 2-9 ') && c.includes('boxblur')), 'preview dobi zamegljeno ozadje');
+    assert.ok(sent.some((c) => c.startsWith('LOADBG 1-9 ')), 'ozadje je pripravljeno na programu');
+    sent.length = 0;
+    await ctl.take('cut');
+    assert.ok(sent.includes('PLAY 1-9'), 'CUT zažene pripravljeno ozadje');
+    assert.ok(sent.some((c) => /^MIXER 1-10 FILL -?[\d.]+ -?[\d.]+ 1\.15 1\.15 \d+ LINEAR$/.test(c)), 'zoom se začne');
+    sent.length = 0;
+    await ctl.take('auto');
+    assert.ok(sent.some((c) => /^PLAY 1-9 EMPTY MIX/.test(c)), 'široka slika: ozadje se odmakne s prelivom');
+    assert.ok(sent.some((c) => /^MIXER 1-10 FILL 0 0 1 1 \d+ LINEAR$/.test(c)), 'naslednja slika se oddaljuje');
+
+    await ctl.setGroup(gid, { kenBurns: false, blur: false });
+    assert.strictEqual(ctl.program.item.kenBurns, false);
+    sent.length = 0;
+    await ctl.clearProgram(false);
+    assert.ok(sent.includes('MIXER 1-10 FILL 0 0 1 1'));
+  } finally {
+    ctl._unwatch && ctl._unwatch();
+    await engine.stop();
+  }
+});

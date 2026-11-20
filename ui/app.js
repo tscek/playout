@@ -210,6 +210,13 @@ function folderRow(rel, name, depth, count, folded) {
   li.dataset.rel = rel;
   li.style.paddingLeft = `${8 + depth * 16}px`;
   li.append(el('span', 'fold', folded ? '▸' : '▾'), el('span', 'name', `📁 ${name}`), el('span', 'count', String(count)));
+  const imgs = folderImages(rel);
+  if (imgs.length > 1) {
+    const ss = el('button', 'item-btn', '🖼');
+    ss.title = `Slideshow iz ${imgs.length} slik v tej mapi`;
+    ss.onclick = (ev) => { ev.stopPropagation(); openSlideshow(imgs, name); };
+    li.append(ss);
+  }
   li.title = 'Klik: zloži / razloži in izberi mapo. Povleci medij sem, da ga premakneš v to mapo.';
   li.onclick = () => {
     currentFolder = rel;
@@ -240,6 +247,51 @@ function folderRow(rel, name, depth, count, folded) {
   };
   return li;
 }
+
+/** Slike neposredno v mapi (v vrstnem redu, kot jih kaže seznam). */
+function folderImages(rel) {
+  const dirOf = (it) => (it.rel && it.rel.includes('/') ? it.rel.slice(0, it.rel.lastIndexOf('/')) : '');
+  return sortItems(state.library.filter((it) => it.type === 'image' && !it.missing && it.rel && dirOf(it) === rel));
+}
+
+let slideIds = [];
+function openSlideshow(items, name) {
+  slideIds = items.map((it) => it.id);
+  if (!slideIds.length) {
+    showError('Ni slik. Izberi mapo s slikami ali poišči slike z iskanjem.');
+    return;
+  }
+  $('#slide-count').textContent = `${slideIds.length} ${slideIds.length === 1 ? 'slika' : slideIds.length === 2 ? 'sliki' : slideIds.length < 5 ? 'slike' : 'slik'}, v vrstnem redu kot na seznamu Medijev.`;
+  $('#slide-name').value = name ? `Slideshow ${name}` : 'Slideshow';
+  $('#dlg-slide').showModal();
+}
+
+$('#btn-slideshow').onclick = () => {
+  const q = libSearch.trim().toLowerCase();
+  let items;
+  if (q) {
+    const words = q.split(/\s+/);
+    items = sortItems(state.library.filter((it) => it.type === 'image' && !it.missing && words.every((w) => (it.rel || it.name).toLowerCase().includes(w))));
+  } else if (state.project && state.project.mediaDir) {
+    items = folderImages(currentFolder);
+  } else {
+    items = sortItems(state.library.filter((it) => it.type === 'image' && !it.missing));
+  }
+  openSlideshow(items, q ? libSearch.trim() : currentFolder ? currentFolder.slice(currentFolder.lastIndexOf('/') + 1) : '');
+};
+
+$('#dlg-slide').addEventListener('close', () => {
+  if ($('#dlg-slide').returnValue !== 'ok') return;
+  run('playlist.slideshow', {
+    name: $('#slide-name').value.trim() || 'Slideshow',
+    mediaIds: slideIds,
+    auto: document.querySelector('input[name=slide-mode]:checked').value === 'auto',
+    seconds: parseInt($('#slide-secs').value, 10) || 6,
+    kenBurns: $('#slide-kb').checked,
+    blur: $('#slide-blur').checked,
+    loop: $('#slide-loop').checked,
+  });
+});
 
 function newFolderRow(depth) {
   const li = el('li', 'newfolder');
@@ -456,7 +508,9 @@ function renderPlaylist() {
       n.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === 'Escape') n.blur(); };
       n.onblur = () => setTimeout(render, 0);
       l.append(document.createTextNode('slika'), n, document.createTextNode('s'));
-      head.append(l);
+      head.append(l,
+        opt('zoom', 'kenBurns', 'Dinamični zoom: slike se počasi približujejo in oddaljujejo (Ken Burns).'),
+        opt('zamegli', 'blur', 'Pokončne in ozke slike dobijo ob straneh zamegljeno isto sliko namesto črnine.'));
     }
     const cue = el('button', 'item-btn', previewMode() ? '▶ v preview' : '▶ predvajaj');
     cue.title = previewMode() ? 'Prvi posnetek skupine v preview' : 'Prvi posnetek skupine na program';

@@ -11,7 +11,7 @@ const GROUP_ENDS = ['stop', 'cut', 'mix'];
 const ENTRY_ENDS = ['stop', 'cut', 'mix', 'loop'];
 
 function makeGroup(name) {
-  return { id: newId(), name: name || 'Skupina', end: 'stop', loop: false, imageSeconds: DEFAULT_IMAGE_SECONDS, collapsed: false, items: [] };
+  return { id: newId(), name: name || 'Skupina', end: 'stop', loop: false, imageSeconds: DEFAULT_IMAGE_SECONDS, kenBurns: false, blur: false, collapsed: false, items: [] };
 }
 
 function optSeconds(v, min = 0) {
@@ -47,7 +47,7 @@ function normEntry(e) {
   };
 }
 
-const FITS = ['fit', 'fill', 'stretch'];
+const FITS = ['fit', 'fill', 'stretch', 'blur']; // blur = ohrani razmerje, ob straneh zamegljena ista slika
 const clamp = (v, lo, hi, def) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def;
@@ -111,6 +111,8 @@ function normalize(data) {
       end: GROUP_ENDS.includes(g.end) ? g.end : g.autoFollow ? (g.followCut ? 'cut' : 'mix') : 'stop',
       loop: !!g.loop,
       imageSeconds: clampSeconds(g.imageSeconds),
+      kenBurns: !!g.kenBurns, // slike v skupini počasi povečuje/pomanjšuje
+      blur: !!g.blur, // slike brez lastnega prileganja dobijo zamegljeno ozadje
       collapsed: !!g.collapsed,
       items: (Array.isArray(g.items) ? g.items : []).filter((e) => e && e.id && e.mediaId).map(normEntry),
     }));
@@ -165,6 +167,8 @@ class Playlist {
     if ('loop' in patch) g.loop = !!patch.loop;
     if ('collapsed' in patch) g.collapsed = !!patch.collapsed;
     if ('imageSeconds' in patch) g.imageSeconds = clampSeconds(patch.imageSeconds);
+    if ('kenBurns' in patch) g.kenBurns = !!patch.kenBurns;
+    if ('blur' in patch) g.blur = !!patch.blur;
     return g;
   }
 

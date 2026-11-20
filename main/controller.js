@@ -18,6 +18,7 @@ const { ProjectStore, scanMedia, freeName, safeFolderName, safeRelFolder, isInsi
 const PROGRAM_CHANNEL = 1;
 const PREVIEW_CHANNEL = 2;
 const LAYER_MAIN = 10;
+const LAYER_BLUR = 9; // zamegljeno ozadje slike (slideshow)
 const LAYER_PANIC_BG = 990; // črna podlaga za paniko
 const LAYER_PANIC = 991; // logo za paniko
 const MONITOR_CONSUMER = 900;
@@ -104,6 +105,10 @@ class Controller extends EventEmitter {
     this._ovl = { 1: { bank: 0, ids: [], keys: [] }, 2: { bank: 0, ids: [], keys: [] } }; // plasti na kanalu
     this._ovlGen = 0;
     this._baseMix = {}; // zadnje poslane barve osnovnega posnetka po kanalih
+    this._blur = {}; // kanal -> pot slike, ki je zamegljena v ozadju (plast 9)
+    this._blurBg = null; // zamegljeno ozadje, pripravljeno v ozadju programa (za takojšen CUT)
+    this._kb = null; // dinamični zoom na programu: null = brez, 'zoom' / 'base' = trenutni cilj
+    this._kbStep = 0;
     // src = { groupId, entryId }, če je posnetek prišel iz playliste
     this.program = { item: null, startedAt: 0, src: null }; // kaj je na programu
     this.preview = { item: null, src: null, seek: 0 }; // kaj je v preview
@@ -433,6 +438,8 @@ class Controller extends EventEmitter {
     for (const k of Object.keys(COLOR_DEFAULT)) out[k] = e[k] === undefined ? COLOR_DEFAULT[k] : e[k];
     delete out.fit;
     if (e.fit) out.fit = e.fit;
+    else if (f && f.group.blur && item.type === 'image') out.fit = 'blur';
+    out.kenBurns = !!(f && f.group.kenBurns && item.type === 'image');
     delete out.inSec;
     delete out.outSec;
     return out;
@@ -916,7 +923,38 @@ class Controller extends EventEmitter {
     this._group(groupId);
     this.playlist.setGroup(groupId, patch || {});
     this._savePlaylist();
+    for (const sl of [this.preview, this.program]) {
+      if (sl.item && sl.src && sl.src.groupId === groupId) sl.item = this._slotItem(this._item(sl.item.id), sl.src);
+    }
+    if (patch && 'blur' in patch && this.preview.src && this.preview.src.groupId === groupId && this.engine.status === 'running') {
+      this.preview.seek = this._previewPosFrames();
+      await this._cue().catch(() => {});
+    }
     await this._rearm();
+  }
+
+  /**
+   * Slideshow: nova skupina s slikami. opts: { name, mediaIds, auto (samodejno naprej), seconds, kenBurns, blur, loop }.
+   * Vrne id skupine.
+   */
+  async createSlideshow(opts = {}) {
+    const ids = (opts.mediaIds || []).filter((id) => {
+      const it = this.library.items.find((x) => x.id === id);
+      return it && it.type === 'image';
+    });
+    if (!ids.length) this._error('Ni slik za slideshow');
+    const g = this.playlist.addGroup(opts.name || `Slideshow ${this.playlist.groups.length + 1}`);
+    this.playlist.setGroup(g.id, {
+      end: opts.auto === false ? 'stop' : 'mix',
+      imageSeconds: opts.seconds || 5,
+      kenBurns: opts.kenBurns !== false,
+      blur: opts.blur !== false,
+      loop: !!opts.loop,
+    });
+    this.playlist.addMedia(g.id, ids);
+    this._savePlaylist();
+    await this._rearm();
+    return g.id;
   }
 
   moveGroup(groupId, index) {
@@ -1122,6 +1160,11 @@ class Controller extends EventEmitter {
    */
   _fitFilter(item) {
     if (item.type === 'audio') return null;
+    if (item.fit === 'blur') {
+      // Kot "fit", le da so robovi prosojni (pod njimi je zamegljeno ozadje).
+      const f = this._fitFilter({ ...item, fit: 'fit' });
+      return f ? `format=rgba,${f}` : null;
+    }
     const W = 1920;
     const H = 1080;
     const fit = item.fit || 'fit';
@@ -1237,6 +1280,11 @@ class Controller extends EventEmitter {
     let bg = `LOADBG ${PROGRAM_CHANNEL}-${LAYER_MAIN} ${this._mediaArgs(item, seek, src)}`;
     if (mode === 'bg') bg += `${this._followCut() ? '' : ' ' + this.transitionPart()} AUTO`;
     await this.engine.send(bg);
+    const blur = this._blurArgs(item);
+    if (blur && mode !== 'bg') {
+      await this.engine.send(`LOADBG ${PROGRAM_CHANNEL}-${LAYER_BLUR} ${blur}`);
+      this._blurBg = blur;
+    }
     this.cuedId = item.id;
     if (mode === 'bg') this.autoCuedId = item.id;
     if (mode === 'timer') this._startImageTimer();
@@ -1393,10 +1441,13 @@ class Controller extends EventEmitter {
       const dur = Math.max(1, Math.round(Number(this.settings.transitionFrames) || 12));
       await this.engine.send(`PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN} EMPTY MIX ${dur} LINEAR`);
       await this._layersOut(PROGRAM_CHANNEL, dur);
+      await this._blurSync(PROGRAM_CHANNEL, null, dur);
     } else {
       await this.engine.send(`CLEAR ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
       await this._layersOut(PROGRAM_CHANNEL, 0);
+      await this._blurSync(PROGRAM_CHANNEL, null, 0);
     }
+    await this._kenBurns(null, null, 0);
     // Ozadje programa je bilo morda izpraznjeno; preview ponovno pripravimo.
     if (this.preview.item) {
       try {
@@ -1589,9 +1640,68 @@ class Controller extends EventEmitter {
     await this._sendAll(this._colorCmds(ch, LAYER_MAIN, c, frames));
   }
 
+  /**
+   * Zamegljeno ozadje slike (prileganje "blur"): ista slika čez cel zaslon, zelo zamegljena in malo temnejša,
+   * v plasti pod sliko. null = ni potrebno (slika že ustreza 16:9 ali prileganje ni "blur").
+   */
+  _blurArgs(item) {
+    if (!item || item.type !== 'image' || item.fit !== 'blur' || !this._fitFilter(item)) return null;
+    const vf = 'scale=192:108:force_original_aspect_ratio=increase,crop=192:108,boxblur=6:2,scale=1920:1080,eq=brightness=-0.12,setsar=1';
+    return `${quote(mediaPath(this._playPath(item)))} VF ${quote(vf)}`;
+  }
+
+  /** Plast z zamegljenim ozadjem sledi sliki v kanalu (s prelivom, kadar ga ima tudi slika). */
+  async _blurSync(ch, item, frames = 0) {
+    const want = this._blurArgs(item);
+    const have = this._blur[ch] || null;
+    const L = `${ch}-${LAYER_BLUR}`;
+    const mix = frames ? ` MIX ${Math.round(frames)} LINEAR` : '';
+    if (want) {
+      if (want === have) return;
+      if (ch === PROGRAM_CHANNEL && !frames && this._blurBg === want) await this.engine.send(`PLAY ${L}`);
+      else await this.engine.send(`PLAY ${L} ${want}${mix}`);
+      if (ch === PROGRAM_CHANNEL) this._blurBg = null;
+    } else if (have) {
+      if (frames) await this.engine.send(`PLAY ${L} EMPTY${mix}`);
+      else await this.engine.send(`CLEAR ${L}`);
+      if (ch === PROGRAM_CHANNEL) this._blurBg = null;
+    }
+    this._blur[ch] = want;
+  }
+
+  /**
+   * Dinamični zoom (Ken Burns) na programu: slika se počasi povečuje, naslednja pomanjšuje in tako naprej.
+   * Vsaka slika začne tam, kjer je prejšnja končala, zato pri prelivu nič ne poskoči.
+   */
+  async _kenBurns(item, src, frames = 0) {
+    const L = `${PROGRAM_CHANNEL}-${LAYER_MAIN}`;
+    if (!item || !item.kenBurns) {
+      if (this._kb) {
+        await this.engine.send(`MIXER ${L} FILL 0 0 1 1${frames ? ` ${Math.round(frames)} LINEAR` : ''}`);
+      }
+      this._kb = null;
+      return;
+    }
+    const fps = fpsOf(this.settings.videoMode);
+    const secs = this._spec(item, src).seconds || 5;
+    const dur = Math.max(1, Math.round(secs * fps + (Number(this.settings.transitionFrames) || 0)));
+    if (this._kb === 'zoom') {
+      this._kb = 'base';
+      await this.engine.send(`MIXER ${L} FILL 0 0 1 1 ${dur} LINEAR`);
+      return;
+    }
+    const s = 1.15;
+    const anchors = [[0.5, 0.5], [0, 0], [1, 1], [1, 0], [0, 1], [0.5, 0]];
+    const [ax, ay] = anchors[this._kbStep++ % anchors.length];
+    const r = (v) => Math.round(v * 10000) / 10000;
+    this._kb = 'zoom';
+    await this.engine.send(`MIXER ${L} FILL ${r(-(s - 1) * ax)} ${r(-(s - 1) * ay)} ${s} ${s} ${dur} LINEAR`);
+  }
+
   /** Plasti v preview: posodobi samo, kar se je spremenilo (videi ne začnejo znova po nepotrebnem). */
   async _syncPreviewLayers(src) {
     const ch = PREVIEW_CHANNEL;
+    await this._blurSync(ch, this.preview.item, 0);
     const list = this._overlays(src);
     const st = this._ovl[ch];
     const base = LAYER_OVL[0];
@@ -1612,6 +1722,8 @@ class Controller extends EventEmitter {
   async _layersOnAir(item, src, frames = 0) {
     if (this.engine.status !== 'running') return;
     await this._applyBaseMix(PROGRAM_CHANNEL, item, frames);
+    await this._blurSync(PROGRAM_CHANNEL, item, frames);
+    await this._kenBurns(item, src, frames);
     const ch = PROGRAM_CHANNEL;
     const list = this._overlays(src);
     const st = this._ovl[ch];
@@ -1922,6 +2034,9 @@ class Controller extends EventEmitter {
   async _onEngineReady() {
     this._lastPgmPath = null;
     this._baseMix = {};
+    this._blur = {};
+    this._blurBg = null;
+    this._kb = null;
     this._ovl = { 1: { bank: 0, ids: [], keys: [] }, 2: { bank: 0, ids: [], keys: [] } };
     await this._addMonitors();
     if (!this.panic) await this._applyMaster().catch(() => {});

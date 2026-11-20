@@ -259,6 +259,7 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'program.panic': (a) => controller.setPanic(!!(a && a.on)),
     'preview.load': (a) => controller.loadPreview(a.id, a.entryId),
     'playlist.addGroup': (a) => controller.addGroup(a && a.name),
+    'playlist.slideshow': (a) => controller.createSlideshow(a || {}),
     'playlist.removeGroup': (a) => controller.removeGroup(a.groupId),
     'playlist.setGroup': (a) => controller.setGroup(a.groupId, a.patch),
     'playlist.moveGroup': (a) => controller.moveGroup(a.groupId, a.index),

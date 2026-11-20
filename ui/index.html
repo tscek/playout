@@ -126,6 +126,7 @@
           <option value="date">najnovejše najprej</option>
         </select>
         <div class="spacer"></div>
+        <button id="btn-slideshow" class="btn ghost small" title="Nova skupina iz slik, ki jih vidiš na seznamu (izbrana mapa ali rezultati iskanja)">🖼 Slideshow</button>
         <button id="btn-new-folder" class="btn ghost small" title="Nova podmapa v projektni mapi">+ Mapa</button>
       </div>
       <div id="lib-folder" class="lib-folder"></div>
@@ -269,6 +270,7 @@
             <option value="fit">Ohrani razmerje (cela slika)</option>
             <option value="fill">Zapolni (obreži robove)</option>
             <option value="stretch">Raztegni</option>
+            <option value="blur">Ohrani razmerje + zamegljeno ozadje</option>
           </select></label>
           <label class="act-field">Povečava <input type="range" id="fit-zoom" min="10" max="400" step="1"><span id="fit-zoom-val"></span></label>
           <label class="act-field">Levo/desno <input type="range" id="fit-x" min="-100" max="100" step="0.5"></label>
@@ -349,6 +351,30 @@
       </div>
       <div class="dialog-actions">
         <button value="close" class="btn">Zapri</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-slide" class="dialog">
+    <form method="dialog">
+      <h2>Nov slideshow</h2>
+      <small id="slide-count"></small>
+      <label class="field"><span>Ime skupine</span><input id="slide-name" class="text-input" autocomplete="off"></label>
+      <div class="field">
+        <span>Menjava slik</span>
+        <label><input type="radio" name="slide-mode" value="auto" checked> Samodejno, s prelivom</label>
+        <label><input type="radio" name="slide-mode" value="manual"> Ročno (vsako sliko pošlješ s CUT ali AUTO)</label>
+      </div>
+      <label class="field"><span>Trajanje slike (sekunde)</span><input id="slide-secs" type="number" min="1" max="3600" value="6" class="text-input" style="width:90px"></label>
+      <div class="field">
+        <label><input type="checkbox" id="slide-kb" checked> Dinamični zoom (slika se počasi približuje in oddaljuje)</label>
+        <label><input type="checkbox" id="slide-blur" checked> Zamegljeno ozadje pri pokončnih in ozkih slikah (namesto črnih robov)</label>
+        <label><input type="checkbox" id="slide-loop"> Ponavljaj (za zadnjo sliko spet prva)</label>
+      </div>
+      <small>Vse to lahko kasneje spremeniš v glavi skupine v playlisti.</small>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn ghost">Prekliči</button>
+        <button value="ok" id="slide-ok" class="btn primary">Ustvari</button>
       </div>
     </form>
   </dialog>
