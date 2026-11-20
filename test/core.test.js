@@ -247,7 +247,7 @@ test('playlist: samodejno nadaljevanje (video z AUTO, zaznava prek OSC, slika po
     const [ia, ib, ic] = ctl.library.items;
     const g = ctl.playlist.groups[0];
     await ctl.addToGroup(g.id, [ia.id, ib.id, ic.id, ia.id]);
-    await ctl.setGroup(g.id, { autoFollow: true, imageSeconds: 1 });
+    await ctl.setGroup(g.id, { end: 'mix', imageSeconds: 1 });
     await ctl.updateSettings({ autoNext: false }); // skupina s samodejnim nadaljevanjem vseeno pripravi naslednjega
 
     await ctl.cueGroup(g.id);
@@ -309,7 +309,7 @@ test('zvok, premik po posnetku in samodejno naprej s CUT', async () => {
     const [ia, ib] = ctl.library.items;
     const g = ctl.playlist.groups[0];
     await ctl.addToGroup(g.id, [ia.id, ib.id]);
-    await ctl.setGroup(g.id, { autoFollow: true, followCut: true });
+    await ctl.setGroup(g.id, { end: 'cut' });
 
     await ctl.setItemVolume(ia.id, -6);
     await ctl.cueGroup(g.id);
@@ -331,6 +331,60 @@ test('zvok, premik po posnetku in samodejno naprej s CUT', async () => {
     assert.strictEqual(sent[1], 'MIXER 1-10 VOLUME 1.0000');
     await ctl.updateSettings({ masterVolumeDb: -40 });
     assert.strictEqual(sent[2], 'MIXER 1 MASTERVOLUME 0.0000');
+  } finally {
+    await engine.stop();
+  }
+});
+
+test('vnos: lastna nastavitev konca, IN/OUT točki, trajanje slike', async () => {
+  const { ctl, engine, sent, dir } = makeController();
+  try {
+    const a = path.join(dir, 'a.mp4');
+    const c = path.join(dir, 'c.png');
+    for (const f of [a, c]) fs.writeFileSync(f, 'x');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([a, c]);
+    const [ia, ic] = ctl.library.items;
+    const g1 = ctl.playlist.groups[0];
+    await ctl.addToGroup(g1.id, [ia.id]);
+    const g2id = ctl.addGroup('B');
+    await ctl.addToGroup(g2id, [ic.id, ia.id]);
+    const [e1] = ctl.playlist.group(g1.id).items;
+    const [e2, e3] = ctl.playlist.group(g2id).items;
+    await ctl.setEntry(e1.id, { end: 'cut', inSec: 2, outSec: 4 });
+    await ctl.setEntry(e2.id, { seconds: 1, end: 'mix' });
+
+    await ctl.loadPreview(ia.id, e1.id);
+    assert.ok(sent.some((x) => /^LOADBG 1-10 ".*a\.mp4" SEEK 100 IN 100 OUT 200$/.test(x)), sent.join('\n'));
+    assert.strictEqual(ctl.getState().preview.inSec, 2);
+    await ctl.updateSettings({ autoNext: false });
+    sent.length = 0;
+    await ctl.take('cut');
+    // Vnos ima svojo nastavitev "naprej s CUT", zato gre tudi v naslednjo skupino; AUTO šele po 0,7 s.
+    await waitFor(() => ctl.getState().preview && ctl.getState().preview.autoFollow === 'end');
+    assert.ok(sent.some((x) => /^LOADBG 1-10 ".*c\.png" AUTO$/.test(x)), sent.join('\n'));
+
+    ctl._onOsc({ address: '/channel/1/stage/layer/10/foreground/file/path', args: [c] });
+    assert.strictEqual(ctl.program.src.entryId, e2.id);
+    await waitFor(() => ctl.getState().preview && ctl.getState().preview.autoFollow === 'timer');
+    sent.length = 0;
+    await waitFor(() => ctl.program.src.entryId === e3.id, 3000);
+    assert.match(sent[0], /^PLAY 1-10 ".*a\.mp4" MIX 12 LINEAR$/);
+
+    // IN/OUT iz preview za medij brez playliste
+    await ctl.loadPreview(ia.id);
+    ctl.times[2] = { elapsed: 1.5, total: 10 };
+    await ctl.markPreview('in');
+    ctl.times[2] = { elapsed: 6, total: 10 };
+    sent.length = 0;
+    await ctl.markPreview('out');
+    assert.strictEqual(ia.inSec, 1.5);
+    assert.strictEqual(ia.outSec, 6);
+    assert.ok(sent.some((x) => /^LOAD 2-10 ".*a\.mp4" SEEK 75 IN 75 OUT 300$/.test(x)), sent.join('\n'));
+    await assert.rejects(() => { ctl.times[2] = { elapsed: 1, total: 10 }; return ctl.markPreview('out'); });
+    await ctl.markPreview('out', true);
+    assert.strictEqual(ia.outSec, null);
   } finally {
     await engine.stop();
   }

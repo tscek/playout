@@ -58,6 +58,10 @@ let selectedId = null; // izbira v načinu brez preview
 let selectedEntryId = null; // izbira v playlisti v načinu brez preview
 let targetGroupId = null; // skupina, v katero gre "+" pri mediju
 let drag = null; // { kind: 'media', id } ali { kind: 'entry', id }
+let openEntryId = null; // vnos z odprtimi nastavitvami
+
+const END_LABEL = { stop: 'ustavi', cut: 'naprej s CUT', mix: 'naprej s prehodom', loop: 'ponavljaj posnetek' };
+const END_ICON = { stop: '⏹', cut: '⏭ CUT', mix: '⏭ prehod', loop: '⟲' };
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -288,13 +292,21 @@ function renderPlaylist() {
       l.append(c, document.createTextNode(label));
       return l;
     };
-    head.append(name,
-      opt('samodejno naprej', 'autoFollow', 'Ko se posnetek konča, gre naslednji iz te skupine sam na program.'),
-      ...(g.autoFollow ? [opt('s CUT', 'followCut', 'Vklopljeno: naslednji gre takoj (CUT). Izklopljeno: s prehodom, izbranim na sredini (npr. preliv).')] : []),
-      opt('ponavljaj', 'loop', 'Za zadnjim posnetkom spet prvi.'));
-    if (g.autoFollow && g.items.some((e) => e.type === 'image')) {
+    const fold = el('button', 'item-btn fold', g.collapsed ? '▸' : '▾');
+    fold.title = g.collapsed ? 'Razširi skupino' : 'Zloži skupino';
+    fold.onclick = (ev) => { ev.stopPropagation(); run('playlist.setGroup', { groupId: g.id, patch: { collapsed: !g.collapsed } }); };
+    const endWrap = el('label', 'group-opt' + (g.end !== 'stop' ? ' on' : ''));
+    endWrap.title = 'Kaj se zgodi, ko se posnetek konča (velja za vse vnose, ki nimajo svoje nastavitve). Na koncu skupine se ustavi.';
+    const endSel = el('select', 'mini-select');
+    for (const k of ['stop', 'cut', 'mix']) endSel.add(new Option(END_LABEL[k], k));
+    endSel.value = g.end;
+    endSel.onclick = (ev) => ev.stopPropagation();
+    endSel.onchange = () => run('playlist.setGroup', { groupId: g.id, patch: { end: endSel.value } });
+    endWrap.append(document.createTextNode('na koncu'), endSel);
+    head.append(fold, name, endWrap, opt('ponavljaj', 'loop', 'Za zadnjim posnetkom skupine spet prvi.'));
+    if (g.items.some((e) => e.type === 'image')) {
       const l = el('label', 'group-opt');
-      l.title = 'Koliko sekund je slika na programu, preden gre naslednji';
+      l.title = 'Koliko sekund je slika na programu, preden gre naslednji (če se ne ustavi)';
       const n = el('input');
       n.type = 'number';
       n.min = 1;
@@ -330,8 +342,11 @@ function renderPlaylist() {
     wrap.append(head);
 
     const ul = el('ul', 'group-list');
-    if (!g.items.length) ul.append(el('div', 'group-empty', 'Prazno. Povleci medije sem.'));
-    g.items.forEach((e, i) => {
+    if (g.collapsed) {
+      const cur = g.items.findIndex((e) => e.id === pgmEntry || e.id === pvwEntry);
+      ul.append(el('div', 'group-empty', `${g.items.length} vnosov` + (cur !== -1 ? ` · trenutno ${cur + 1}.` : '')));
+    } else if (!g.items.length) ul.append(el('div', 'group-empty', 'Prazno. Povleci medije sem.'));
+    if (!g.collapsed) g.items.forEach((e, i) => {
       const li = el('li');
       if (e.id === pgmEntry) li.classList.add('onair');
       if (previewMode() && e.id === pvwEntry) li.classList.add('inpvw');
@@ -361,6 +376,17 @@ function renderPlaylist() {
         if (state.preview.autoFollow) li.append(el('span', 'badge next', 'SLEDI'));
       }
       if (e.id === pgmEntry) li.append(el('span', 'badge pgm', 'PGM'));
+      if (e.inSec || e.outSec) li.append(el('span', 'badge info', `${e.inSec ? fmtTime(e.inSec) : '0:00'}–${e.outSec ? fmtTime(e.outSec) : 'konec'}`));
+      if (e.type === 'image' && e.seconds) li.append(el('span', 'badge info', `${e.seconds} s`));
+      if (e.end) li.append(el('span', 'badge info end', END_ICON[e.end]));
+      const gear = el('button', 'item-btn' + (openEntryId === e.id ? ' active' : ''), '⚙');
+      gear.title = 'Nastavitve vnosa: kaj na koncu, trajanje slike, IN/OUT';
+      gear.onclick = (ev) => {
+        ev.stopPropagation();
+        openEntryId = openEntryId === e.id ? null : e.id;
+        render();
+      };
+      li.append(gear);
       const mv = (txt, title, to, dis) => {
         const b = el('button', 'item-btn', txt);
         b.title = title;
@@ -379,10 +405,56 @@ function renderPlaylist() {
         onEntryClick(e);
       };
       ul.append(li);
+      if (openEntryId === e.id) ul.append(entryEditor(e, g));
     });
     wrap.append(ul);
     box.append(wrap);
   });
+}
+
+function entryEditor(e, g) {
+  const box = el('div', 'entry-edit');
+  box.onclick = (ev) => ev.stopPropagation();
+  const set = (patch) => run('playlist.setEntry', { entryId: e.id, patch });
+
+  const endL = el('label', 'group-opt');
+  const sel = el('select', 'mini-select');
+  sel.add(new Option(`kot skupina (${END_LABEL[g.end]})`, ''));
+  for (const k of ['stop', 'cut', 'mix', 'loop']) sel.add(new Option(END_LABEL[k], k));
+  sel.value = e.end || '';
+  sel.onchange = () => set({ end: sel.value || null });
+  endL.append(document.createTextNode('Na koncu'), sel);
+  box.append(endL);
+
+  if (e.type === 'image') {
+    const l = el('label', 'group-opt');
+    const n = el('input');
+    n.type = 'number';
+    n.min = 1;
+    n.max = 3600;
+    n.placeholder = String(g.imageSeconds);
+    n.value = e.seconds || '';
+    n.onchange = () => set({ seconds: n.value === '' ? null : parseFloat(n.value) });
+    n.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === 'Escape') n.blur(); };
+    n.onblur = () => setTimeout(render, 0);
+    l.append(document.createTextNode('Trajanje'), n, document.createTextNode(`s (prazno = ${g.imageSeconds} s)`));
+    box.append(l);
+  } else {
+    const point = (label, key) => {
+      const l = el('span', 'group-opt');
+      l.append(document.createTextNode(`${label} ${e[key] ? fmtTime(e[key]) + '.' + String(Math.round((e[key] % 1) * 100)).padStart(2, '0') : '—'}`));
+      if (e[key]) {
+        const x = el('button', 'item-btn', '✕');
+        x.title = `Pobriši ${label} točko`;
+        x.onclick = () => set({ [key]: null });
+        l.append(x);
+      }
+      return l;
+    };
+    box.append(point('IN', 'inSec'), point('OUT', 'outSec'),
+      el('span', 'hint-inline', 'IN in OUT nastaviš v preview: zapelji drsnik in klikni IN ali OUT.'));
+  }
+  return box;
 }
 
 function onEntryClick(e) {
@@ -413,10 +485,12 @@ function timeText(item, t) {
   if (!item) return ['', ''];
   if (item.type === 'image') return ['slika', ''];
   if (!t || !t.total) return ['', ''];
-  if (item.loop) return [`zanka · ${fmtTime(t.elapsed)} / ${fmtTime(t.total)}`, ''];
-  const left = t.total - t.elapsed;
+  const end = item.outSec || t.total;
+  const start = item.inSec || 0;
+  if (item.loop) return [`zanka · ${fmtTime(t.elapsed - start)} / ${fmtTime(end - start)}`, ''];
+  const left = end - t.elapsed;
   const cls = left <= 0.5 ? 'time-end' : left <= 10 ? 'time-warn' : '';
-  return [`−${fmtTime(Math.ceil(left))}  (${fmtTime(t.total)})`, cls];
+  return [`−${fmtTime(Math.ceil(left))}  (${fmtTime(end - start)})`, cls];
 }
 
 function renderMonitors() {
@@ -447,6 +521,25 @@ function renderMonCtl(prefix, item, t) {
   scrub.disabled = !canSeek;
   if (canSeek && !scrub.dragging) scrub.value = Math.round((t.elapsed / t.total) * 1000);
   if (!canSeek && !scrub.dragging) scrub.value = 0;
+  // IN/OUT oznake na drsniku
+  const wrap = scrub.parentElement;
+  if (canSeek && (item.inSec || item.outSec)) {
+    const a = ((item.inSec || 0) / t.total) * 100;
+    const b = ((item.outSec || t.total) / t.total) * 100;
+    wrap.style.setProperty('--in', `${a}%`);
+    wrap.style.setProperty('--out', `${b}%`);
+    wrap.classList.add('has-range');
+  } else wrap.classList.remove('has-range');
+  if (prefix === 'pvw') {
+    for (const k of ['in', 'out']) {
+      const b = $(`#btn-mark-${k}`);
+      b.disabled = !canSeek;
+      const v = item && item[`${k}Sec`];
+      b.classList.toggle('active', !!v);
+      b.title = (k === 'in' ? 'IN: začetek posnetka na trenutnem mestu' : 'OUT: konec posnetka na trenutnem mestu')
+        + (v ? ` (zdaj ${fmtTime(v)}; desni klik pobriše)` : '');
+    }
+  }
   const vol = $(`#${prefix}-vol`);
   vol.disabled = !item || item.type === 'image';
   if (!vol.dragging) vol.value = item ? item.volumeDb || 0 : 0;
@@ -600,6 +693,14 @@ liveSlider($('#master-vol'), (db) => settingsPatch({ masterVolumeDb: db }),
   () => { $('#master-val').textContent = fmtDb(Number($('#master-vol').value)); });
 
 $('#btn-cut').onclick = () => run('take.cut');
+for (const k of ['in', 'out']) {
+  const b = $(`#btn-mark-${k}`);
+  b.onclick = () => run('preview.mark', { which: k });
+  b.oncontextmenu = (ev) => {
+    ev.preventDefault();
+    run('preview.mark', { which: k, clear: true });
+  };
+}
 $('#btn-panic').onclick = () => run('program.panic', { on: !(state && state.panic) });
 $('#btn-add-group').onclick = () => run('playlist.addGroup').then((id) => {
   if (id) targetGroupId = id;

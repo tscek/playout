@@ -27,7 +27,9 @@
         <div class="mon-head"><span class="mon-label">PREVIEW</span><span class="mon-name" id="pvw-name">—</span></div>
         <div class="mon-screen"><img id="pvw-img" alt=""><div class="mon-empty" id="pvw-empty">prazno</div></div>
         <div class="mon-ctl">
-          <input type="range" class="scrub" id="pvw-scrub" min="0" max="1000" value="0" title="Začetna točka: od kod se posnetek začne ob preklopu">
+          <span class="scrub-wrap"><input type="range" class="scrub" id="pvw-scrub" min="0" max="1000" value="0" title="Začetna točka: od kod se posnetek začne ob preklopu"></span>
+          <button class="btn ghost small mark" id="btn-mark-in">IN</button>
+          <button class="btn ghost small mark" id="btn-mark-out">OUT</button>
           <label class="vol" title="Jakost tega posnetka (shrani se k posnetku)">🔊 <input type="range" id="pvw-vol" min="-40" max="10" step="0.5"><span id="pvw-vol-val"></span></label>
         </div>
         <div class="mon-foot"><span id="pvw-time"></span><button class="btn ghost small" id="btn-pvw-clear">Počisti</button></div>
@@ -60,7 +62,7 @@
         <div class="mon-head"><span class="mon-label">PROGRAM</span><span class="mon-name" id="pgm-name">—</span></div>
         <div class="mon-screen"><img id="pgm-img" alt=""><div class="mon-empty" id="pgm-empty">prazno</div></div>
         <div class="mon-ctl">
-          <input type="range" class="scrub" id="pgm-scrub" min="0" max="1000" value="0" title="Premik po posnetku na programu (takoj na izhodu)">
+          <span class="scrub-wrap"><input type="range" class="scrub" id="pgm-scrub" min="0" max="1000" value="0" title="Premik po posnetku na programu (takoj na izhodu)"></span>
           <label class="vol" title="Jakost tega posnetka (shrani se k posnetku, spremeni se takoj)">🔊 <input type="range" id="pgm-vol" min="-40" max="10" step="0.5"><span id="pgm-vol-val"></span></label>
         </div>
         <div class="mon-foot">

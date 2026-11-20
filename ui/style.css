@@ -303,3 +303,19 @@ input[type=number] {
 .vol span, #master-val { font-variant-numeric: tabular-nums; min-width: 44px; display: inline-block; text-align: right; }
 .mini.master input { width: 100%; accent-color: var(--amber); }
 .group-list li.selected { background: #1f3354; border-color: var(--accent); }
+
+.scrub-wrap { position: relative; flex: 1; min-width: 0; display: flex; }
+.scrub-wrap .scrub { width: 100%; }
+.scrub-wrap.has-range::after {
+  content: ''; position: absolute; left: var(--in); width: calc(var(--out) - var(--in)); bottom: -2px; height: 3px;
+  background: var(--amber); border-radius: 2px; pointer-events: none;
+}
+.btn.mark { margin: 0; padding: 3px 8px; font-size: 11px; }
+.btn.mark.active { border-color: var(--amber); color: var(--amber); }
+.mini-select { padding: 2px 4px; font-size: 12px; }
+.badge.info { background: var(--panel-2); color: var(--muted); font-weight: 600; }
+.badge.info.end { color: var(--amber); }
+.entry-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 0 8px 6px 38px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.entry-edit input[type=number] { width: 70px; padding: 3px 4px; }
+.item-btn.fold { border: 0; font-size: 13px; padding: 0 4px; }

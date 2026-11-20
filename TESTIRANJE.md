@@ -1,4 +1,4 @@
-# Test 3. koraka: playlist, skupine, panika, zvok, premik po posnetku
+# Test v0.4.0: playlist po vnosih, IN/OUT, trajanje slik
 
 Namesti novo verzijo čez staro. Nastavitve in seznam medijev ostanejo.
 
@@ -14,15 +14,28 @@ Namesti novo verzijo čez staro. Nastavitve in seznam medijev ostanejo.
    Če je vklopljeno **ponavljaj**, gre spet prvi iz iste skupine.
 7. Puščici gor/dol se premikata po playlisti, če je trenutni posnetek iz nje.
 
-## B. Samodejno naprej
+## B. Kaj se zgodi na koncu posnetka
 
-1. Pri skupini vklopi **samodejno naprej**. Pošlji prvi posnetek na program.
-2. Ko se video konča, gre naslednji iz skupine sam na program. V preview piše "sledi samodejno",
-   pri vnosu je oznaka SLEDI.
-3. **s CUT** vklopljen: naslednji gre takoj. Izklopljen: s prehodom, ki je izbran na sredini (npr. preliv).
-4. Slika v taki skupini ostane na programu toliko sekund, kot piše pri "slika … s", potem gre naprej.
-5. Na koncu skupine se ustavi (razen če je vklopljeno ponavljaj). Posnetek z LOOP se nikoli ne konča.
-6. Med tem lahko kadar koli pritisneš CUT/AUTO ali naložiš kaj drugega v preview. Potem samodejno ne nadaljuje.
+1. Pri skupini izbereš **na koncu**: *ustavi*, *naprej s CUT* ali *naprej s prehodom* (prehod, izbran na sredini).
+   To velja za vse vnose v skupini. Na koncu skupine se ustavi (razen če je vklopljeno *ponavljaj*).
+2. Vsak vnos ima gumb **⚙**. Tam lahko izbereš svoj konec: *kot skupina*, *ustavi*, *naprej s CUT*,
+   *naprej s prehodom* ali *ponavljaj posnetek*. Vnos s svojo nastavitvijo gre naprej tudi v naslednjo skupino.
+3. Ko je naslednji pripravljen, da gre sam, piše v preview "sledi samodejno", pri vnosu pa SLEDI.
+4. Med tem lahko kadar koli pritisneš CUT/AUTO ali naložiš kaj drugega v preview. Potem samodejno ne nadaljuje.
+5. Skupino zložiš s puščico ▾ pred imenom.
+
+## Trajanje slik
+
+1. Pri skupini je privzeto trajanje slike ("slika … s").
+2. Pri vnosu slike lahko pod ⚙ vpišeš svoje trajanje. Prazno pomeni privzeto trajanje skupine.
+
+## IN in OUT točka
+
+1. Posnetek naloži v preview, zapelji drsnik pod preview in klikni **IN** ali **OUT**.
+2. Točki se shranita k vnosu v playlisti (ali k mediju, če si ga naložil iz Medijev). Na drsniku je oranžna črta.
+3. Desni klik na IN ali OUT točko pobriše (ali ✕ pod ⚙ pri vnosu).
+4. Posnetek se potem začne na IN in konča na OUT. Preostali čas in samodejno naprej se računata do OUT.
+   Pri *ponavljaj posnetek* se ponavlja samo del med IN in OUT.
 
 ## C. Premik po posnetku
 
@@ -43,6 +56,6 @@ Namesti novo verzijo čez staro. Nastavitve in seznam medijev ostanejo.
 
 ## Kaj mi pošlješ
 
-- Ali je samodejno naprej točno na koncu videa (brez črne vmes, brez zamrznjene sličice).
+- Ali je samodejno naprej točno na koncu videa ali na OUT točki (brez črne vmes, brez zamrznjene sličice).
 - Ali sta drsnika (premik, jakost) dovolj natančna za delo v živo.
 - Kar koli, kar ti pri delu ni logično ali bi želel drugače.

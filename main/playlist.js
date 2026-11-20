@@ -6,8 +6,30 @@ const { newId } = require('./media');
 
 const DEFAULT_IMAGE_SECONDS = 5;
 
+// Kaj se zgodi na koncu posnetka: ustavi, naprej s CUT, naprej s prehodom, (samo vnos) ponavljaj posnetek.
+const GROUP_ENDS = ['stop', 'cut', 'mix'];
+const ENTRY_ENDS = ['stop', 'cut', 'mix', 'loop'];
+
 function makeGroup(name) {
-  return { id: newId(), name: name || 'Skupina', autoFollow: false, followCut: false, loop: false, imageSeconds: DEFAULT_IMAGE_SECONDS, items: [] };
+  return { id: newId(), name: name || 'Skupina', end: 'stop', loop: false, imageSeconds: DEFAULT_IMAGE_SECONDS, collapsed: false, items: [] };
+}
+
+function optSeconds(v, min = 0) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < min) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function normEntry(e) {
+  return {
+    id: e.id,
+    mediaId: e.mediaId,
+    end: ENTRY_ENDS.includes(e.end) ? e.end : null, // null = kot skupina
+    seconds: optSeconds(e.seconds, 1), // trajanje slike; null = kot skupina
+    inSec: optSeconds(e.inSec),
+    outSec: optSeconds(e.outSec),
+  };
 }
 
 function normalize(data) {
@@ -17,11 +39,12 @@ function normalize(data) {
     .map((g) => ({
       id: g.id,
       name: typeof g.name === 'string' && g.name.trim() ? g.name : 'Skupina',
-      autoFollow: !!g.autoFollow,
-      followCut: !!g.followCut, // samodejno naprej s CUT namesto s prehodom
+      // v0.3.0 je imel autoFollow + followCut
+      end: GROUP_ENDS.includes(g.end) ? g.end : g.autoFollow ? (g.followCut ? 'cut' : 'mix') : 'stop',
       loop: !!g.loop,
       imageSeconds: clampSeconds(g.imageSeconds),
-      items: (Array.isArray(g.items) ? g.items : []).filter((e) => e && e.id && e.mediaId).map((e) => ({ id: e.id, mediaId: e.mediaId })),
+      collapsed: !!g.collapsed,
+      items: (Array.isArray(g.items) ? g.items : []).filter((e) => e && e.id && e.mediaId).map(normEntry),
     }));
   if (!out.length) out.push({ ...makeGroup('Playlist') });
   return { groups: out };
@@ -70,9 +93,9 @@ class Playlist {
     const g = this.group(groupId);
     if (!g) return null;
     if (typeof patch.name === 'string' && patch.name.trim()) g.name = patch.name.trim().slice(0, 80);
-    if ('autoFollow' in patch) g.autoFollow = !!patch.autoFollow;
+    if ('end' in patch && GROUP_ENDS.includes(patch.end)) g.end = patch.end;
     if ('loop' in patch) g.loop = !!patch.loop;
-    if ('followCut' in patch) g.followCut = !!patch.followCut;
+    if ('collapsed' in patch) g.collapsed = !!patch.collapsed;
     if ('imageSeconds' in patch) g.imageSeconds = clampSeconds(patch.imageSeconds);
     return g;
   }
@@ -88,10 +111,23 @@ class Playlist {
   addMedia(groupId, mediaIds, index) {
     const g = this.group(groupId);
     if (!g) return [];
-    const entries = mediaIds.map((mediaId) => ({ id: newId(), mediaId }));
+    const entries = mediaIds.map((mediaId) => normEntry({ id: newId(), mediaId }));
     const at = Number.isInteger(index) ? Math.max(0, Math.min(g.items.length, index)) : g.items.length;
     g.items.splice(at, 0, ...entries);
     return entries;
+  }
+
+  /** Nastavitve vnosa: end, seconds, inSec, outSec (null = privzeto). */
+  setEntry(entryId, patch) {
+    const f = this.findEntry(entryId);
+    if (!f) return null;
+    const e = f.entry;
+    if ('end' in patch) e.end = ENTRY_ENDS.includes(patch.end) ? patch.end : null;
+    if ('seconds' in patch) e.seconds = optSeconds(patch.seconds, 1);
+    if ('inSec' in patch) e.inSec = optSeconds(patch.inSec);
+    if ('outSec' in patch) e.outSec = optSeconds(patch.outSec);
+    if (e.inSec !== null && e.outSec !== null && e.outSec <= e.inSec) e.outSec = null;
+    return e;
   }
 
   removeEntry(entryId) {
@@ -139,4 +175,4 @@ class Playlist {
   }
 }
 
-module.exports = { Playlist, DEFAULT_IMAGE_SECONDS };
+module.exports = { Playlist, DEFAULT_IMAGE_SECONDS, GROUP_ENDS, ENTRY_ENDS, optSeconds };
