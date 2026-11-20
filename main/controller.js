@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS = {
   audioDevice: '', // '' = privzeta naprava sistema
   masterVolumeDb: 0, // glavni fader programa v dB
   masterMuted: false,
+  fadeSeconds: 0.5, // privzeti fade na začetku in koncu vnosa (0 = brez)
   panicSource: '', // '' = črno, sicer id posnetka (logo) iz knjižnice
   audioDelayFrames: 0, // zvok kasneje za toliko sličic (zakasnitev slike v CasparCG ne deluje, ko ima zaslon več Hz kot kanal)
 };
@@ -145,7 +146,8 @@ class Controller extends EventEmitter {
       program: this.program.item
         ? { id: this.program.item.id, name: this.program.item.name, type: this.program.item.type, loop: !!this.program.item.loop,
           volumeDb: this.program.item.volumeDb || 0, muted: !!this.program.item.muted, ...this._specState(this.program.item, this.program.src),
-          paused: !!this.program.paused, pausedAt: this.program.pausedAt || 0, now: Date.now(), startedAt: this.program.startedAt, src: this.program.src }
+          paused: !!this.program.paused, pausedAt: this.program.pausedAt || 0, now: Date.now(), startedAt: this.program.startedAt, src: this.program.src,
+          layers: ((this._entryOf(this.program.src) || {}).layers || []) }
         : null,
       preview: this.preview.item
         ? { id: this.preview.item.id, name: this.preview.item.name, type: this.preview.item.type, loop: !!this.preview.item.loop,
@@ -268,7 +270,7 @@ class Controller extends EventEmitter {
 
   async updateSettings(patch) {
     const allowed = ['videoMode', 'programOutput', 'audioDevice', 'audioDelayFrames'];
-    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb', 'masterMuted'];
+    const operational = ['transitionType', 'transitionFrames', 'transitionDirection', 'previewMode', 'directTake', 'autoNext', 'panicSource', 'masterVolumeDb', 'masterMuted', 'fadeSeconds'];
     const next = { ...this.settings };
     for (const k of [...allowed, ...operational]) if (k in patch) next[k] = patch[k];
     if (!TRANSITIONS[next.transitionType]) next.transitionType = 'MIX';
@@ -283,6 +285,7 @@ class Controller extends EventEmitter {
     if (typeof next.panicSource !== 'string') next.panicSource = '';
     next.masterVolumeDb = clampDb(next.masterVolumeDb, 0);
     next.masterMuted = !!next.masterMuted;
+    next.fadeSeconds = Math.max(0, Math.min(10, Math.round((Number(next.fadeSeconds) || 0) * 100) / 100));
     const masterChanged = next.masterVolumeDb !== this.settings.masterVolumeDb || next.masterMuted !== this.settings.masterMuted;
     const panicChanged = next.panicSource !== this.settings.panicSource;
     const transitionChanged = ['transitionType', 'transitionFrames', 'transitionDirection'].some((k) => next[k] !== this.settings[k]);
@@ -345,11 +348,18 @@ class Controller extends EventEmitter {
     const slot = which === 'program' ? this.program : this.preview;
     if (!slot.item) this._error(which === 'program' ? 'Program je prazen' : 'Preview je prazen');
     if (!slot.src || !this.playlist.findEntry(slot.src.entryId)) this._error('Nastavitve ima samo vnos v playlisti. Dodaj posnetek v playlisto.');
+    return this.setEntryLook(slot.src.entryId, patch);
+  }
+
+  /** Slika, barve, zvok vnosa v playlisti; kjer je vnos v preview ali na programu, velja takoj. */
+  async setEntryLook(entryId, patch) {
+    const f = this.playlist.findEntry(entryId);
+    if (!f) this._error('Vnos ne obstaja');
     const p = { ...(patch || {}) };
-    const entryId = slot.src.entryId;
     this.playlist.setEntry(entryId, p);
     this._savePlaylist();
-    const lib = this._item(slot.item.id);
+    const lib = this.library.items.find((x) => x.id === f.entry.mediaId);
+    if (!lib) return;
     if (!lib.width && lib.type !== 'audio' && ('fit' in p || 'zoom' in p || 'posX' in p || 'posY' in p || p.reset)) this._probe(lib);
     for (const s of [this.preview, this.program]) {
       if (s.item && s.src && s.src.entryId === entryId) s.item = this._slotItem(lib, s.src);
@@ -972,6 +982,8 @@ class Controller extends EventEmitter {
       inF: inSec ? Math.round(inSec * fps) : 0,
       outF: outSec ? Math.round(outSec * fps) : 0,
       seconds: (e && e.seconds) || (g ? g.imageSeconds : null),
+      fadeIn: e && e.fadeIn !== null && e.fadeIn !== undefined ? e.fadeIn : this.settings.fadeSeconds || 0,
+      fadeOut: e && e.fadeOut !== null && e.fadeOut !== undefined ? e.fadeOut : this.settings.fadeSeconds || 0,
     };
   }
 
@@ -1244,12 +1256,14 @@ class Controller extends EventEmitter {
     this._clearImageTimer();
     try {
       // Ozadje s samodejnim nadaljevanjem ima pripet prehod, zato CUT v tem primeru pošlje posnetek znova.
+      const fade = kind === 'cut' ? await this._fadeInPrepare(item, src) : 0;
       if (kind === 'cut' && this.cuedId === item.id && this.autoCuedId !== item.id) {
         await this.engine.send(`PLAY ${PROGRAM_CHANNEL}-${LAYER_MAIN}`);
       } else {
         await this.engine.send(this._playCommand(item, this.preview.seek || 0, kind === 'auto' ? this.transitionPart() : '', src));
       }
-      await this._applyItemVolume(item, kind === 'auto' ? this.settings.transitionFrames : 0);
+      await this._applyItemVolume(item, kind === 'auto' ? this.settings.transitionFrames : fade);
+      if (fade) await this._applyBaseMix(PROGRAM_CHANNEL, item, fade);
       await this._layersOnAir(item, src, kind === 'auto' ? this.settings.transitionFrames : 0);
     } catch (e) {
       this._error(`Prehod ni uspel: ${e.message}`);
@@ -1286,8 +1300,10 @@ class Controller extends EventEmitter {
     this._clearImageTimer();
     const inF = this._spec(item, src).inF;
     try {
+      const fade = k === 'auto' ? 0 : await this._fadeInPrepare(item, src);
       await this.engine.send(this._playCommand(item, inF, k === 'auto' ? this.transitionPart() : '', src));
-      await this._applyItemVolume(item, k === 'auto' ? this.settings.transitionFrames : 0);
+      await this._applyItemVolume(item, k === 'auto' ? this.settings.transitionFrames : fade);
+      if (fade) await this._applyBaseMix(PROGRAM_CHANNEL, item, fade);
       await this._layersOnAir(item, src, k === 'auto' ? this.settings.transitionFrames : 0);
     } catch (e) {
       this._error(`Predvajanje ni uspelo: ${e.message}`);
@@ -1331,6 +1347,19 @@ class Controller extends EventEmitter {
         await this._cue();
       } catch { /* ni kritično */ }
     }
+  }
+
+  /** Sličice motorja na sekundo (iz OSC) za prikaz obremenjenosti. */
+  engineRate() {
+    const now = Date.now();
+    const prev = this._rateAt || now;
+    const dt = (now - prev) / 1000;
+    const ticks = this._ticks || 0;
+    this._ticks = 0;
+    this._rateAt = now;
+    const expected = fpsOf(this.settings.videoMode);
+    if (dt < 0.5 || this.engine.status !== 'running') return { fps: null, expected };
+    return { fps: Math.round((ticks / dt) * 10) / 10, expected };
   }
 
   // ---------- plasti in barve ----------
@@ -1399,6 +1428,34 @@ class Controller extends EventEmitter {
 
   _layerPlayCmd(ch, L, l, item) {
     return `PLAY ${ch}-${L} ${quote(mediaPath(item.path))}${item.type !== 'image' && l.loop ? ' LOOP' : ''}`;
+  }
+
+  /**
+   * Fade na začetku (pri CUT): slika in zvok gresta na 0 pred začetkom, po začetku se dvigneta.
+   * Vrne število sličic fade-a (0 = brez).
+   */
+  async _fadeInPrepare(item, src) {
+    const n = Math.round(this._spec(item, src).fadeIn * fpsOf(this.settings.videoMode));
+    if (!n || this.panic) return 0;
+    await this._applyBaseMix(PROGRAM_CHANNEL, { ...item, opacity: 0 }, 0);
+    await this.engine.send(`MIXER ${PROGRAM_CHANNEL}-${LAYER_MAIN} VOLUME 0`);
+    return n;
+  }
+
+  /** Fade na koncu (pred OUT ali koncem posnetka), če se ne nadaljuje s prelivom. */
+  _checkFadeOut(elapsed, total) {
+    const p = this.program;
+    if (!p.item || p.fadedOut || p.paused || p.item.type === 'image' || this.engine.status !== 'running') return;
+    const spec = this._spec(p.item, p.src);
+    if (!spec.fadeOut || spec.loop) return;
+    if (this.autoCuedId && !this._followCut()) return; // naslednji pride s prelivom
+    const end = spec.outSec || total;
+    if (!end || Date.now() - (p.wallStart || 0) < 500) return;
+    if (elapsed < end - spec.fadeOut - 0.02 || elapsed >= end) return;
+    p.fadedOut = true;
+    const n = Math.max(1, Math.round((end - elapsed) * fpsOf(this.settings.videoMode)));
+    this._applyBaseMix(PROGRAM_CHANNEL, { ...p.item, opacity: 0 }, n).catch(() => {});
+    this.engine.send(`MIXER ${PROGRAM_CHANNEL}-${LAYER_MAIN} VOLUME 0 ${n} LINEAR`).catch(() => {});
   }
 
   /** Barve in prosojnost osnovnega posnetka (samo če so se spremenile). */
@@ -1503,37 +1560,50 @@ class Controller extends EventEmitter {
 
   /** Doda medij kot plast na vrh vnosa v preview (ali na programu). */
   async addLayer(which, mediaId) {
-    const slot = this._layerSlot(which);
-    const it = this._item(mediaId);
-    if (it.type === 'audio') this._error('Zvok ne more biti plast slike');
-    if (!it.width && !it.height) this._probe(it);
-    const l = this.playlist.addLayer(slot.src.entryId, mediaId);
-    this._savePlaylist();
-    await this._layersChanged(slot.src.entryId);
-    return l.id;
+    return this.addEntryLayer(this._layerSlot(which).src.entryId, mediaId);
   }
 
   async setLayer(which, layerId, patch) {
-    const slot = this._layerSlot(which);
-    const p = patch || {};
-    if (!this.playlist.setLayer(slot.src.entryId, layerId, p)) this._error('Plast ne obstaja');
-    this._savePlaylist();
-    if ('loop' in p) await this._layersChanged(slot.src.entryId);
-    else await this._liveLayerMix(slot.src.entryId, layerId);
+    return this.setEntryLayer(this._layerSlot(which).src.entryId, layerId, patch);
   }
 
   async removeLayer(which, layerId) {
-    const slot = this._layerSlot(which);
-    this.playlist.removeLayer(slot.src.entryId, layerId);
-    this._savePlaylist();
-    await this._layersChanged(slot.src.entryId);
+    return this.removeEntryLayer(this._layerSlot(which).src.entryId, layerId);
   }
 
   async moveLayer(which, layerId, dir) {
-    const slot = this._layerSlot(which);
-    this.playlist.moveLayer(slot.src.entryId, layerId, dir);
+    return this.moveEntryLayer(this._layerSlot(which).src.entryId, layerId, dir);
+  }
+
+  async addEntryLayer(entryId, mediaId) {
+    if (!this.playlist.findEntry(entryId)) this._error('Vnos ne obstaja');
+    const it = this._item(mediaId);
+    if (it.type === 'audio') this._error('Zvok ne more biti plast slike');
+    if (!it.width && !it.height) this._probe(it);
+    const l = this.playlist.addLayer(entryId, mediaId);
     this._savePlaylist();
-    await this._layersChanged(slot.src.entryId);
+    await this._layersChanged(entryId);
+    return l.id;
+  }
+
+  async setEntryLayer(entryId, layerId, patch) {
+    const p = patch || {};
+    if (!this.playlist.setLayer(entryId, layerId, p)) this._error('Plast ne obstaja');
+    this._savePlaylist();
+    if ('loop' in p) await this._layersChanged(entryId);
+    else await this._liveLayerMix(entryId, layerId);
+  }
+
+  async removeEntryLayer(entryId, layerId) {
+    this.playlist.removeLayer(entryId, layerId);
+    this._savePlaylist();
+    await this._layersChanged(entryId);
+  }
+
+  async moveEntryLayer(entryId, layerId, dir) {
+    this.playlist.moveLayer(entryId, layerId, dir);
+    this._savePlaylist();
+    await this._layersChanged(entryId);
   }
 
   /** Dodana/odstranjena/premaknjena plast: preview takoj, program ob naslednjem predvajanju. */
@@ -1684,6 +1754,12 @@ class Controller extends EventEmitter {
     if (which === 'program') {
       await this.engine.send(`CALL ${PROGRAM_CHANNEL}-${LAYER_MAIN} SEEK ${frames}`);
       this.program.startedAt = Date.now() - sec * 1000;
+      if (this.program.fadedOut) {
+        // Po fade out je slika črna: ob premiku nazaj jo vrnemo.
+        this.program.fadedOut = false;
+        await this._applyBaseMix(PROGRAM_CHANNEL, this.program.item, 4);
+        await this._applyItemVolume(this.program.item, 4);
+      }
       if (this.program.paused) this.program.pausedAt = Date.now();
     } else {
       this.preview.seek = frames;
@@ -1771,6 +1847,10 @@ class Controller extends EventEmitter {
   }
 
   _onOsc({ address, args }) {
+    if (address === '/channel/1/format') {
+      this._ticks = (this._ticks || 0) + 1; // en paket na sličico kanala
+      return;
+    }
     const fm = /^\/channel\/(\d+)\/stage\/layer\/10\/foreground\/file\/streams\/0\/fps$/.exec(address);
     if (fm) {
       const fps = args[1] ? args[0] / args[1] : args[0];
@@ -1807,6 +1887,7 @@ class Controller extends EventEmitter {
     }
     this.times[ch] = { elapsed, total: typeof total === 'number' ? total : 0, fps: this.clipFps[ch] || 0 };
     if (ch === PROGRAM_CHANNEL && this._endPending) this._checkEndAction();
+    if (ch === PROGRAM_CHANNEL) this._checkFadeOut(elapsed, this.times[ch].total);
     const now = Date.now();
     if (now - this._timeEmitAt > 200) {
       this._timeEmitAt = now;
@@ -1828,9 +1909,12 @@ class Controller extends EventEmitter {
   _autoAdvanced() {
     const { item, src } = this.preview;
     this.engine._log(`Samodejno naprej: ${item.name}`);
-    const frames = this._followCut() ? 0 : this.settings.transitionFrames;
+    const cut = this._followCut();
+    const frames = cut ? 0 : this.settings.transitionFrames;
+    const fadeIn = cut ? Math.round(this._spec(item, src).fadeIn * fpsOf(this.settings.videoMode)) : 0;
     this._onAir(item, src, this.preview.seek || 0);
-    this._applyItemVolume(item, 4).catch(() => {});
+    this._applyItemVolume(item, fadeIn || 4).catch(() => {});
+    if (fadeIn) this._applyBaseMix(PROGRAM_CHANNEL, item, fadeIn).catch(() => {});
     this._layersOnAir(item, src, frames).catch(() => {});
     this._afterTake(item, src).catch(() => {});
   }

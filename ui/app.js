@@ -7,7 +7,7 @@ const api = (() => {
   let ws = null;
   let nextId = 1;
   const waiting = new Map();
-  const listeners = { state: [], log: [], times: [], open: [], close: [] };
+  const listeners = { state: [], log: [], times: [], open: [], close: [], load: [] };
 
   function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
@@ -27,7 +27,7 @@ const api = (() => {
         if (msg.ok) w.resolve(msg.data);
         else w.reject(new Error(msg.error));
       } else if (listeners[msg.type]) {
-        const payload = msg.type === 'state' ? msg.state : msg.type === 'times' ? msg.times : msg.line;
+        const payload = msg.type === 'state' ? msg.state : msg.type === 'times' ? msg.times : msg.type === 'load' ? msg.load : msg.line;
         listeners[msg.type].forEach((f) => f(payload));
       }
     };
@@ -506,11 +506,11 @@ function renderPlaylist() {
       else if (e.volumeDb && e.type !== 'image') li.append(el('span', 'badge info', fmtDb(e.volumeDb)));
       if (e.type !== 'audio' && (e.fit && e.fit !== 'fit' || e.zoom !== 1 || e.posX || e.posY)) li.append(el('span', 'badge info', '▣'));
       if (e.end) li.append(el('span', 'badge info end', END_ICON[e.end]));
-      const gear = el('button', 'item-btn' + (openEntryId === e.id ? ' active' : ''), '⚙');
-      gear.title = 'Nastavitve vnosa: kaj na koncu, trajanje slike, IN/OUT';
+      const gear = el('button', 'item-btn' + (editEntryId === e.id && $('#dlg-entry').open ? ' active' : ''), '⚙');
+      gear.title = 'Nastavitve vnosa: slika, barve, plasti, čas, konec, zvok';
       gear.onclick = (ev) => {
         ev.stopPropagation();
-        openEntryId = openEntryId === e.id ? null : e.id;
+        openEntryDialog(e.id, editEntryId === e.id ? editTab : 'time');
         render();
       };
       li.append(gear);
@@ -532,7 +532,6 @@ function renderPlaylist() {
         onEntryClick(e);
       };
       ul.append(li);
-      if (openEntryId === e.id) ul.append(entryEditor(e, g));
     });
     wrap.append(ul);
     box.append(wrap);
@@ -552,6 +551,30 @@ function entryEditor(e, g) {
   sel.onchange = () => set({ end: sel.value || null });
   endL.append(document.createTextNode('Na koncu'), sel);
   box.append(endL);
+
+  // Fade na začetku in koncu (prazno = privzeto iz nastavitev)
+  const def = state.settings.fadeSeconds || 0;
+  const fadeInput = (key, label, title) => {
+    const l = el('label', 'group-opt');
+    l.title = title;
+    const n = el('input');
+    n.type = 'number';
+    n.min = 0;
+    n.max = 10;
+    n.step = 0.1;
+    n.placeholder = String(def);
+    n.value = e[key] === null || e[key] === undefined ? '' : e[key];
+    n.onchange = () => set({ [key]: n.value === '' ? null : parseFloat(n.value) });
+    n.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === 'Escape') n.blur(); };
+    n.onblur = () => setTimeout(render, 0);
+    l.append(document.createTextNode(label), n, document.createTextNode('s'));
+    return l;
+  };
+  box.append(
+    fadeInput('fadeIn', 'Fade na začetku', 'Slika in zvok se pri CUT dvigneta iz črnine/tišine. Prazno = privzeto, 0 = brez.'),
+    fadeInput('fadeOut', 'Fade na koncu', 'Pred koncem (ali OUT) slika in zvok gresta v črnino/tišino. Ne velja, če naslednji pride s prelivom. Prazno = privzeto, 0 = brez.'),
+    el('span', 'hint-inline', `prazno = privzeto (${def} s, v Nastavitvah)`),
+  );
 
   // Akcije ob začetku in koncu vnosa
   const acts = (state.actions && state.actions.actions) || [];
@@ -685,6 +708,10 @@ function renderMonitors() {
   $('.monitors').classList.toggle('nopvw', !previewMode());
   $('#pvw-name').textContent = pvw ? pvw.name + (pvw.autoFollow ? '  · sledi samodejno' : '') : '—';
   $('#pgm-name').textContent = pgm ? pgm.name : '—';
+  for (const [id, it] of [['#pvw-name', pvw], ['#pgm-name', pgm]]) {
+    const n = it && it.layers ? it.layers.filter((l) => !l.hidden).length : 0;
+    if (n) $(id).append(el('span', 'mon-layers', `▤ ${n} ${n === 1 ? 'plast' : n === 2 ? 'plasti' : n < 5 ? 'plasti' : 'plasti'}`));
+  }
   $('#pvw-empty').classList.toggle('hidden', !!pvw);
   $('#pgm-empty').classList.toggle('hidden', !!pgm);
   $('#mon-pgm').classList.toggle('live', !!pgm);
@@ -749,22 +776,128 @@ function renderMonCtl(prefix, item, t) {
   play.classList.toggle('on', running);
   play.title = running ? 'Ustavi (pavza)' : 'Predvajaj';
   for (const b of document.querySelectorAll(`.tbtn[data-which=${which}]`)) b.disabled = !canSeek;
-  if (prefix === 'pvw') renderFitPanel(item);
+  if (prefix === 'pvw') renderPreviewEditButtons(item);
 }
 
 /** Plošča za prileganje slike v preview. */
-function renderFitPanel(item) {
+/** Gumba pod preview odpreta okno z nastavitvami vnosa v preview. */
+function renderPreviewEditButtons(item) {
+  const ok = !!(item && item.src);
+  const lock = 'Posnetek iz Medijev: za nastavitve ga dodaj v playlisto';
   const btn = $('#btn-fit');
-  const ok = !!(item && item.type !== 'audio' && item.src);
   btn.disabled = !ok;
-  btn.title = item && !item.src ? 'Posnetek iz Medijev: za nastavitve ga dodaj v playlisto' : 'Prileganje slike';
+  btn.title = item && !ok ? lock : 'Nastavitve vnosa: slika, barve, plasti, čas, zvok';
   const changed = ok && (item.fit && item.fit !== 'fit' || item.zoom !== 1 || item.posX || item.posY
     || ['opacity', 'brightness', 'contrast', 'saturation'].some((k) => item[k] !== undefined && item[k] !== 1));
   btn.classList.toggle('on', !!changed);
-  renderLayersPanel(item);
-  const panel = $('#fit-panel');
-  if (!ok) panel.classList.add('hidden');
-  if (!ok || panel.classList.contains('hidden')) return;
+  const lb = $('#btn-layers');
+  const n = ok && item.layers ? item.layers.length : 0;
+  lb.disabled = !ok;
+  lb.textContent = n ? `▤ Plasti (${n})` : '▤ Plasti';
+  lb.classList.toggle('on', n > 0);
+  lb.title = item && !ok ? lock : 'Plasti: več medijev hkrati (logo, slika, video) nad tem posnetkom';
+}
+
+// ---------- okno z nastavitvami vnosa ----------
+
+let editEntryId = null;
+let editTab = 'image';
+
+function findEntryState(entryId) {
+  for (const g of state.playlist) {
+    const e = g.items.find((x) => x.id === entryId);
+    if (e) return { e, g };
+  }
+  return null;
+}
+
+/** Vnos kot "posnetek" za plošče (mere iz knjižnice). */
+function entryAsItem(e) {
+  const m = state.library.find((x) => x.id === e.mediaId) || {};
+  return { ...e, id: e.mediaId, src: { entryId: e.id }, width: m.width || 0, height: m.height || 0, fps: m.fps };
+}
+
+function openEntryDialog(entryId, tab) {
+  if (!entryId) return;
+  editEntryId = entryId;
+  if (tab) editTab = tab;
+  const d = $('#dlg-entry');
+  if (!d.open) d.show();
+  renderEntryDialog();
+}
+
+function renderEntryDialog() {
+  const d = $('#dlg-entry');
+  if (!d.open || !state) return;
+  const hit = findEntryState(editEntryId);
+  if (!hit) {
+    d.close();
+    return;
+  }
+  const { e, g } = hit;
+  const item = entryAsItem(e);
+  $('#entry-dlg-title').textContent = `${e.name}  ·  ${g.name}`;
+  for (const b of document.querySelectorAll('#entry-tabs button')) {
+    b.classList.toggle('on', b.dataset.tab === editTab);
+    if (b.dataset.tab === 'layers') b.textContent = e.layers && e.layers.length ? `Plasti (${e.layers.length})` : 'Plasti';
+    b.disabled = (b.dataset.tab === 'image' || b.dataset.tab === 'layers') && e.type === 'audio';
+  }
+  for (const t of document.querySelectorAll('#dlg-entry .tab-body')) t.classList.toggle('hidden', t.dataset.tab !== editTab);
+  if (editTab === 'image') renderFitPanel(item);
+  if (editTab === 'layers') renderLayersPanel(item);
+  if (editTab === 'time') {
+    const box = $('#entry-time');
+    if (!box.contains(document.activeElement)) {
+      box.innerHTML = '';
+      box.append(entryEditor(e, g));
+    }
+  }
+  if (editTab === 'audio') {
+    if (!$('#ed-vol').dragging) $('#ed-vol').value = e.volumeDb || 0;
+    $('#ed-vol-val').textContent = fmtDb(Number($('#ed-vol').value));
+    $('#ed-muted').checked = !!e.muted;
+    $('#ed-vol').disabled = e.type === 'image';
+    $('#ed-muted').disabled = e.type === 'image';
+  }
+}
+
+for (const b of document.querySelectorAll('#entry-tabs button')) {
+  b.onclick = () => {
+    editTab = b.dataset.tab;
+    renderEntryDialog();
+  };
+}
+$('#entry-dlg-close').onclick = () => $('#dlg-entry').close();
+liveSlider($('#ed-vol'), (db) => run('entry.look', { entryId: editEntryId, patch: { volumeDb: db } }),
+  () => { $('#ed-vol-val').textContent = fmtDb(Number($('#ed-vol').value)); });
+$('#ed-muted').onchange = (ev) => run('entry.look', { entryId: editEntryId, patch: { muted: ev.target.checked } });
+// Premikanje okna
+(() => {
+  const d = $('#dlg-entry');
+  const head = $('#entry-dlg-head');
+  let start = null;
+  head.addEventListener('pointerdown', (ev) => {
+    if (ev.target.closest('button')) return;
+    const r = d.getBoundingClientRect();
+    start = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    head.setPointerCapture(ev.pointerId);
+  });
+  head.addEventListener('pointermove', (ev) => {
+    if (!start) return;
+    const x = Math.max(0, Math.min(window.innerWidth - 120, ev.clientX - start.x));
+    const y = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - start.y));
+    d.style.left = `${x}px`;
+    d.style.top = `${y}px`;
+  });
+  head.addEventListener('pointerup', () => {
+    if (start) lsSet('entryDlgPos', { left: d.style.left, top: d.style.top });
+    start = null;
+  });
+  const pos = lsGet('entryDlgPos', null);
+  if (pos && pos.left) Object.assign(d.style, pos);
+})();
+
+function renderFitPanel(item) {
   if (document.activeElement !== $('#fit-mode')) $('#fit-mode').value = item.fit || 'fit';
   for (const [id, v] of [['#fit-zoom', Math.round((item.zoom || 1) * 100)], ['#fit-x', item.posX || 0], ['#fit-y', item.posY || 0]]) {
     if (!$(id).dragging) $(id).value = v;
@@ -791,16 +924,7 @@ const BLEND_LABEL = {
 for (const [k, v] of Object.entries(BLEND_LABEL)) $('#ly-blend').add(new Option(v, k));
 
 function renderLayersPanel(item) {
-  const btn = $('#btn-layers');
-  const ok = !!(item && item.src);
-  btn.disabled = !ok;
-  const layers = (ok && item.layers) || [];
-  btn.textContent = layers.length ? `▤ Plasti (${layers.length})` : '▤ Plasti';
-  btn.classList.toggle('on', layers.length > 0);
-  btn.title = item && !item.src ? 'Posnetek iz Medijev: za plasti ga dodaj v playlisto' : 'Plasti: več medijev hkrati (logo, slika, video) nad tem posnetkom';
-  const panel = $('#layers-panel');
-  if (!ok) panel.classList.add('hidden');
-  if (!ok || panel.classList.contains('hidden')) return;
+  const layers = item.layers || [];
   const libById = new Map(state.library.map((m) => [m.id, m]));
   const ul = $('#layer-list');
   ul.innerHTML = '';
@@ -818,11 +942,11 @@ function renderLayersPanel(item) {
     };
     li.append(
       mk(l.hidden ? '◌' : '👁', l.hidden ? 'Prikaži plast' : 'Skrij plast (velja takoj, tudi na programu)', () => layerSet(l.id, { hidden: !l.hidden })),
-      mk('▲', 'Višje (bolj spredaj)', () => run('layers.move', { which: 'preview', layerId: l.id, dir: 1 })),
-      mk('▼', 'Nižje', () => run('layers.move', { which: 'preview', layerId: l.id, dir: -1 })),
-      mk('✕', 'Odstrani plast', () => run('layers.remove', { which: 'preview', layerId: l.id })),
+      mk('▲', 'Višje (bolj spredaj)', () => run('entry.layers.move', { entryId: editEntryId, layerId: l.id, dir: 1 })),
+      mk('▼', 'Nižje', () => run('entry.layers.move', { entryId: editEntryId, layerId: l.id, dir: -1 })),
+      mk('✕', 'Odstrani plast', () => run('entry.layers.remove', { entryId: editEntryId, layerId: l.id })),
     );
-    li.onclick = () => { selectedLayerId = l.id; renderLayersPanel(state.preview); };
+    li.onclick = () => { selectedLayerId = l.id; renderEntryDialog(); };
     ul.append(li);
   }
   const base = el('li', 'base');
@@ -850,14 +974,12 @@ function renderLayersPanel(item) {
   $('#ly-muted').checked = l.muted;
 }
 
-const layerSet = (layerId, patch) => run('layers.set', { which: 'preview', layerId, patch });
-$('#btn-layers').onclick = () => {
-  $('#layers-panel').classList.toggle('hidden');
-  render();
-};
+const layerSet = (layerId, patch) => run('entry.layers.set', { entryId: editEntryId, layerId, patch });
+const previewEntryId = () => state && state.preview && state.preview.src && state.preview.src.entryId;
+$('#btn-layers').onclick = () => openEntryDialog(previewEntryId(), 'layers');
 $('#btn-layer-add').onclick = () => {
   const id = $('#layer-add-media').value;
-  if (id) run('layers.add', { which: 'preview', mediaId: id }).then((lid) => { if (lid) selectedLayerId = lid; });
+  if (id) run('entry.layers.add', { entryId: editEntryId, mediaId: id }).then((lid) => { if (lid) selectedLayerId = lid; });
 };
 for (const [k, div] of [['scale', 100], ['posX', 1], ['posY', 1], ['opacity', 100], ['brightness', 100], ['contrast', 100], ['saturation', 100]]) {
   liveSlider($(`#ly-${k}`), (v) => { if (selectedLayerId) layerSet(selectedLayerId, { [k]: v / div }); },
@@ -889,8 +1011,7 @@ pvwMon.addEventListener('drop', (ev) => {
   run('layers.add', { which: 'preview', mediaId: id }).then((lid) => {
     if (lid) {
       selectedLayerId = lid;
-      $('#layers-panel').classList.remove('hidden');
-      render();
+      openEntryDialog(previewEntryId(), 'layers');
     }
   });
 });
@@ -942,6 +1063,7 @@ function render() {
   renderMonitors();
   fillTakeControls();
   if (typeof renderActions === 'function') renderActions();
+  renderEntryDialog();
   if (state.lastError && state.lastError !== render.lastError) showError(state.lastError);
   render.lastError = state.lastError;
 }
@@ -1150,13 +1272,9 @@ for (const [prefix, which] of [['pvw', 'preview'], ['pgm', 'program']]) {
 $('#master-mute').onclick = () => settingsPatch({ masterMuted: !(state && state.settings.masterMuted) });
 
 // Prileganje
-$('#btn-fit').onclick = () => {
-  $('#fit-panel').classList.toggle('hidden');
-  render();
-};
+$('#btn-fit').onclick = () => openEntryDialog(previewEntryId(), 'image');
 const fitPatch = (patch) => {
-  const item = state && state.preview;
-  if (item) run('media.transform', { which: 'preview', patch });
+  if (editEntryId) run('entry.look', { entryId: editEntryId, patch });
 };
 $('#fit-mode').onchange = (e) => fitPatch({ fit: e.target.value });
 $('#fit-reset').onclick = () => fitPatch({ reset: true });
@@ -1219,7 +1337,8 @@ document.addEventListener('change', (ev) => {
 });
 
 document.addEventListener('keydown', (ev) => {
-  if (document.querySelector('dialog[open]')) return;
+  if (document.querySelector('dialog[open]:modal')) return;
+  if (ev.target && ev.target.closest && ev.target.closest('#dlg-entry') && ev.key !== 'Enter' && ev.key !== ' ') return;
   const tag = (ev.target && ev.target.tagName) || '';
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
   if (ev.key === 'Enter') {
@@ -1312,6 +1431,7 @@ function fillSettings() {
   $('#audio-warning').textContent = state.audioWarning || '';
   $('#audio-warning').classList.toggle('hidden', !state.audioWarning);
   $('#set-avdelay').value = s.audioDelayFrames || 0;
+  $('#set-fade').value = s.fadeSeconds ?? 0.5;
   const audios = [['', 'Privzeta naprava sistema']];
   for (const a of state.audioDevices) audios.push([a, a]);
   fillSelect($('#set-audio'), audios, s.audioDevice);
@@ -1349,6 +1469,7 @@ $('#dlg-settings').addEventListener('close', () => {
     audioDevice: $('#set-audio').value,
     audioDelayFrames: parseInt($('#set-avdelay').value, 10) || 0,
     panicSource: $('#set-panic').value,
+    fadeSeconds: parseFloat($('#set-fade').value) || 0,
   });
 });
 
@@ -1395,3 +1516,23 @@ api.on('close', () => $('#conn-banner').classList.remove('hidden'));
 setInterval(() => {
   if (state && state.program && state.program.type === 'image') renderTimes();
 }, 250);
+
+
+// ---------- obremenjenost ----------
+
+api.on('load', (l) => {
+  const parts = [];
+  const cls = (v, warn, bad) => (v >= bad ? 'bad' : v >= warn ? 'warn' : '');
+  const item = (label, text, c, title) => `<span class="ld ${c}" title="${title}">${label} <b>${text}</b></span>`;
+  parts.push(item('CPU', `${l.cpu} %`, cls(l.cpu, 70, 90), 'Obremenjenost procesorja'));
+  const ramPct = l.ramTotalGb ? (l.ramUsedGb / l.ramTotalGb) * 100 : 0;
+  parts.push(item('RAM', `${l.ramUsedGb} / ${l.ramTotalGb} GB`, cls(ramPct, 80, 92), 'Porabljen pomnilnik'));
+  if (l.gpu) parts.push(item('GPU', `${l.gpu.util} %${l.gpu.memMb ? ` · ${(l.gpu.memMb / 1024).toFixed(1)} GB` : ''}`, cls(l.gpu.util, 75, 92), 'Obremenjenost grafične kartice in njen pomnilnik'));
+  if (l.engine && l.engine.fps !== null) {
+    const ratio = l.engine.fps / l.engine.expected;
+    const c = ratio < 0.9 ? 'bad' : ratio < 0.97 ? 'warn' : 'ok';
+    parts.push(item('Motor', `${Math.round(l.engine.fps)} / ${Math.round(l.engine.expected)} sl/s`, c,
+      'Koliko sličic na sekundo motor dejansko izriše. Če je manj, kot jih zahteva video format, slika trza (preveč plasti, prevelike datoteke ali preobremenjen računalnik).'));
+  }
+  $('#load').innerHTML = parts.join('');
+});

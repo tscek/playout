@@ -12,6 +12,7 @@ const { ChannelMonitor } = require('./engine/monitor');
 const { OscListener } = require('./engine/osc');
 const { createServer } = require('./server');
 const { ALL_EXT } = require('./media');
+const { SysLoad } = require('./sysload');
 
 const UI_PORT = 8088;
 
@@ -184,12 +185,15 @@ app.whenReady().then(async () => {
     },
   };
 
+  const sysload = new SysLoad();
+  sysload.start();
+  app.on('will-quit', () => sysload.stop());
   let srv;
   try {
-    srv = await createServer({ controller, uiDir: path.join(__dirname, '..', 'ui'), port: UI_PORT, extraActions });
+    srv = await createServer({ controller, uiDir: path.join(__dirname, '..', 'ui'), port: UI_PORT, extraActions, sysload });
   } catch {
     // Vrata so zasedena: uporabimo poljubna prosta.
-    srv = await createServer({ controller, uiDir: path.join(__dirname, '..', 'ui'), port: 0, extraActions });
+    srv = await createServer({ controller, uiDir: path.join(__dirname, '..', 'ui'), port: 0, extraActions, sysload });
   }
   uiUrl = `http://127.0.0.1:${srv.port}/`;
 

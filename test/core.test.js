@@ -39,6 +39,7 @@ function makeController() {
   const display = { index: 2, device: '\\\\.\\DISPLAY3', adapter: 'Intel', monitor: 'ATEM', active: true, primary: false,
     x: 1920, y: 0, width: 1920, height: 1080, hz: 50 };
   const ctl = new Controller({ engine, dataDir: dir, listDisplays: async () => [display] });
+  ctl.settings.fadeSeconds = 0; // stari testi preverjajo ukaze brez fade-a
   const media = path.join(dir, 'clip one.mp4');
   fs.writeFileSync(media, 'x');
   return { ctl, engine, sent, dir, media };
@@ -683,6 +684,50 @@ test('plasti in barve: preview, program, preliv, spremembe v živo', async () =>
     await ctl.clearPreview();
     await ctl.removeItem(il.id);
     assert.strictEqual(ctl.playlist.findEntry(e3.id).entry.layers.length, 0);
+  } finally {
+    await engine.stop();
+  }
+});
+
+test('fade na začetku in koncu vnosa', async () => {
+  const { ctl, engine, sent, dir } = makeController();
+  try {
+    ctl.settings.fadeSeconds = 0.5;
+    const a = path.join(dir, 'a.mp4');
+    fs.writeFileSync(a, 'x');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([a]);
+    const [ia] = ctl.library.items;
+    const g = ctl.playlist.groups[0];
+    await ctl.addToGroup(g.id, [ia.id, ia.id]);
+    const [e1, e2] = ctl.playlist.group(g.id).items;
+    await ctl.setEntry(e1.id, { outSec: 8 });
+    await ctl.loadPreview(ia.id, e1.id);
+    sent.length = 0;
+    await ctl.take('cut');
+    const i0 = sent.indexOf('MIXER 1-10 OPACITY 0.0000');
+    const iPlay = sent.findIndex((x) => x.startsWith('PLAY 1-10'));
+    assert.ok(i0 !== -1 && i0 < iPlay, sent.join('\n'));
+    assert.ok(sent.includes('MIXER 1-10 VOLUME 0'));
+    assert.ok(sent.includes('MIXER 1-10 OPACITY 1.0000 25 LINEAR'), sent.join('\n')); // 0,5 s pri 50p
+    assert.ok(sent.includes('MIXER 1-10 VOLUME 1.0000 25 LINEAR'), sent.join('\n'));
+    // Fade out pred OUT (8 s): naslednji vnos ni samodejen (skupina: ustavi)
+    ctl.program.wallStart = Date.now() - 5000;
+    sent.length = 0;
+    ctl._onOsc({ address: '/channel/1/stage/layer/10/foreground/file/time', args: [7.6, 20] });
+    await waitFor(() => sent.some((x) => /^MIXER 1-10 VOLUME 0 \d+ LINEAR$/.test(x)));
+    assert.ok(sent.includes('MIXER 1-10 OPACITY 0.0000 20 LINEAR'), sent.join('\n'));
+    // Premik nazaj vrne sliko
+    sent.length = 0;
+    await ctl.seek('program', 2);
+    assert.ok(sent.includes('MIXER 1-10 OPACITY 1.0000 4 LINEAR'), sent.join('\n'));
+    // Vnos z 0 = brez fade-a, AUTO brez fade-a
+    await ctl.setEntry(e2.id, { fadeIn: 0 });
+    await ctl.loadPreview(ia.id, e2.id);
+    sent.length = 0;
+    await ctl.take('cut');
+    assert.ok(!sent.includes('MIXER 1-10 OPACITY 0.0000'), sent.join('\n'));
   } finally {
     await engine.stop();
   }

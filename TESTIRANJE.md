@@ -1,6 +1,20 @@
-# Test v0.9.0: plasti in filtri
+# Test v0.10.0: okno vnosa, fade, obremenjenost
 
 Namesti novo verzijo čez staro.
+
+## Novo v 0.10.0
+
+1. **Okno z nastavitvami vnosa**: ⚙ pri vnosu v playlisti ali *⚙ Vnos* / *▤ Plasti* pod preview odpre plavajoče okno.
+   Zavihki: *Slika in barve*, *Plasti*, *Čas in konec*, *Zvok*. Okno premakneš z vlečenjem za naslovno vrstico (zapomni si mesto).
+   Medtem lahko normalno delaš (Enter = CUT, preslednica = AUTO, ko nisi v polju za vnos). Urejaš lahko tudi vnos, ki ni v preview.
+2. **Fade**: privzeto 0,5 s na začetku (pri CUT) in na koncu posnetka ali pred OUT, slika in zvok.
+   Privzeto vrednost spremeniš v Nastavitvah, za posamezen vnos pod *Čas in konec* (prazno = privzeto, 0 = brez).
+   Pri AUTO in samodejnem nadaljevanju s prelivom se fade ne dela (prehod že preliva). Premik drsnika na programu po fade-u vrne sliko.
+3. **Plasti so vidne**: v glavi preview in programa piše *▤ 1 plast* ipd., pri vnosu v playlisti ▤ s številom.
+4. **Obremenjenost** spodaj levo: CPU, RAM, grafična (če jo Windows ali NVIDIA sporoči) in **Motor x / 50 sl/s**:
+   koliko sličic motor res izriše. Če je število manjše od zahtevanega (rdeče), slika trza. Pošlji mi, kaj piše, ko trza.
+
+# v0.9.0: plasti in filtri
 
 ## Novo v 0.9.0
 

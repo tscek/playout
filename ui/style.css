@@ -405,3 +405,24 @@ input[type=number] {
 .layer-edit.hidden { display: none; }
 .layer-edit input[type=range] { width: 100px; }
 .monitor.pvw.layerdrop .mon-screen { outline: 2px dashed var(--accent); outline-offset: -4px; }
+
+/* Obremenjenost */
+.statusbar { display: flex; align-items: center; gap: 12px; padding: 3px 12px; border-top: 1px solid var(--line); background: var(--panel); font-size: 11px; color: var(--muted); min-height: 22px; }
+.load { display: flex; gap: 14px; }
+.ld b { color: var(--text); font-weight: 600; }
+.ld.ok b { color: var(--green); }
+.ld.warn b { color: var(--amber); }
+.ld.bad b { color: #ff6b6e; }
+
+/* Okno z nastavitvami vnosa */
+.entry-dlg { position: fixed; margin: 0; left: 20px; top: 52vh; width: 720px; max-width: calc(100vw - 32px); max-height: calc(100vh - 100px); overflow: auto; padding: 0 0 10px; z-index: 50; }
+.entry-dlg-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel-2); cursor: move; position: sticky; top: 0; z-index: 1; }
+.entry-dlg .tabs { display: flex; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
+.entry-dlg .tabs button { background: transparent; border: 1px solid transparent; border-bottom: 0; color: var(--muted); padding: 6px 12px; border-radius: 6px 6px 0 0; cursor: pointer; font: inherit; }
+.entry-dlg .tabs button.on { border-color: var(--line); background: var(--panel); color: var(--text); }
+.entry-dlg .tab-body { padding: 8px 2px 0; }
+.entry-dlg .tab-body.hidden { display: none; }
+.entry-dlg .fit-panel { margin: 6px 10px 0; }
+.entry-dlg #entry-time .entry-edit { margin: 6px 12px; }
+.entry-dlg-note { display: block; margin: 8px 14px 0; }
+.mon-layers { margin-left: 8px; font-size: 11px; color: #8ab4ff; border: 1px solid #3d5c99; border-radius: 4px; padding: 0 5px; }

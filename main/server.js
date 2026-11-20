@@ -26,7 +26,7 @@ const MIME = {
  * @param {string} o.host
  * @param {Record<string, Function>} o.extraActions  ukazi, ki potrebujejo Electron (npr. izbira datotek)
  */
-function createServer({ controller, uiDir, port, host = '127.0.0.1', extraActions = {} }) {
+function createServer({ controller, uiDir, port, host = '127.0.0.1', extraActions = {}, sysload = null }) {
   const server = http.createServer((req, res) => {
     let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
     const mon = /^\/monitor\/(\d+)\.mjpg$/.exec(urlPath);
@@ -86,6 +86,11 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'playPause': (a) => controller.playPause(a.which, a.play),
     'media.mute': (a) => controller.setLook(a.which, { muted: a.muted }),
     'media.transform': (a) => controller.setLook(a.which || 'preview', a.patch),
+    'entry.look': (a) => controller.setEntryLook(a.entryId, a.patch),
+    'entry.layers.add': (a) => controller.addEntryLayer(a.entryId, a.mediaId),
+    'entry.layers.set': (a) => controller.setEntryLayer(a.entryId, a.layerId, a.patch),
+    'entry.layers.remove': (a) => controller.removeEntryLayer(a.entryId, a.layerId),
+    'entry.layers.move': (a) => controller.moveEntryLayer(a.entryId, a.layerId, a.dir),
     'layers.add': (a) => controller.addLayer(a.which || 'preview', a.mediaId),
     'layers.set': (a) => controller.setLayer(a.which || 'preview', a.layerId, a.patch),
     'layers.remove': (a) => controller.removeLayer(a.which || 'preview', a.layerId),
@@ -123,6 +128,7 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
 
   controller.on('state', (state) => broadcast({ type: 'state', state }));
   controller.on('times', (times) => broadcast({ type: 'times', times }));
+  if (sysload) sysload.on('update', (load) => broadcast({ type: 'load', load: { ...load, engine: controller.engineRate() } }));
   controller.engine.on('log', (line) => broadcast({ type: 'log', line }));
 
   wss.on('connection', (ws, req) => {

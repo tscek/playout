@@ -21,6 +21,14 @@ function optSeconds(v, min = 0) {
   return Math.round(n * 1000) / 1000;
 }
 
+/** Fade v sekundah: null = privzeto iz nastavitev, 0 = izklopljeno. */
+function optFade(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(10, Math.round(n * 100) / 100));
+}
+
 function normEntry(e) {
   return {
     id: e.id,
@@ -32,6 +40,8 @@ function normEntry(e) {
     startAction: typeof e.startAction === 'string' && e.startAction ? e.startAction : null, // akcija ob začetku
     endAction: typeof e.endAction === 'string' && e.endAction ? e.endAction : null, // akcija ob koncu
     endLead: Math.max(0, Math.min(30, optSeconds(e.endLead) || 0)), // koliko sekund pred koncem
+    fadeIn: optFade(e.fadeIn),
+    fadeOut: optFade(e.fadeOut),
     ...normLook(e),
     layers: (Array.isArray(e.layers) ? e.layers : []).filter((l) => l && typeof l.mediaId === 'string').slice(0, MAX_LAYERS).map(normLayer),
   };
@@ -186,6 +196,8 @@ class Playlist {
     if ('outSec' in patch) e.outSec = optSeconds(patch.outSec);
     if ('startAction' in patch) e.startAction = typeof patch.startAction === 'string' && patch.startAction ? patch.startAction : null;
     if ('endAction' in patch) e.endAction = typeof patch.endAction === 'string' && patch.endAction ? patch.endAction : null;
+    if ('fadeIn' in patch) e.fadeIn = optFade(patch.fadeIn);
+    if ('fadeOut' in patch) e.fadeOut = optFade(patch.fadeOut);
     if ('endLead' in patch) e.endLead = Math.max(0, Math.min(30, optSeconds(patch.endLead) || 0));
     if (patch.reset) Object.assign(patch, { fit: null, zoom: 1, posX: 0, posY: 0 });
     if (patch.resetColor) Object.assign(patch, { opacity: 1, brightness: 1, contrast: 1, saturation: 1 });
