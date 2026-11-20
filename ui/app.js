@@ -280,10 +280,19 @@ function fillSelect(sel, options, value) {
 function fillSettings() {
   const s = state.settings;
   fillSelect($('#set-videomode'), Object.entries(state.videoModes), s.videoMode);
-  const outs = [['test', 'Testno okno (na glavnem zaslonu)']];
+  const outs = [['auto', 'Samodejno (prvi zunanji zaslon)']];
   for (const d of state.displays) outs.push([d.device, d.label]);
+  outs.push(['test', 'Testno okno (na glavnem zaslonu)']);
   outs.push(['none', 'Brez slike (samo zvok)']);
   fillSelect($('#set-output'), outs, s.programOutput);
+  const res = state.programOutputResolved;
+  const resDisp = state.displays.find((d) => d.device === res);
+  $('#out-resolved').textContent = 'Trenutno: ' + (resDisp ? resDisp.label : res === 'test' ? 'testno okno' : 'brez slike');
+  $('#displays-error').textContent = state.displaysError || '';
+  $('#displays-error').classList.toggle('hidden', !state.displaysError);
+  $('#audio-warning').textContent = state.audioWarning || '';
+  $('#audio-warning').classList.toggle('hidden', !state.audioWarning);
+  $('#set-avdelay').value = s.audioDelayFrames || 0;
   const audios = [['', 'Privzeta naprava sistema']];
   for (const a of state.audioDevices) audios.push([a, a]);
   fillSelect($('#set-audio'), audios, s.audioDevice);
@@ -316,6 +325,7 @@ $('#dlg-settings').addEventListener('close', () => {
     videoMode: $('#set-videomode').value,
     programOutput: $('#set-output').value,
     audioDevice: $('#set-audio').value,
+    audioDelayFrames: parseInt($('#set-avdelay').value, 10) || 0,
   });
 });
 

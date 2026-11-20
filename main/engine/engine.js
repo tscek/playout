@@ -12,7 +12,7 @@ const net = require('net');
 const { spawn, execFileSync } = require('child_process');
 const { EventEmitter } = require('events');
 const { AmcpClient } = require('./amcp');
-const { buildConfig } = require('./caspar-config');
+const { buildConfig, parseOpenAlDevices } = require('./caspar-config');
 
 const STARTUP_TIMEOUT_MS = 45000; // prvi zagon (CEF, OpenGL) je lahko počasen
 const MAX_LOG_LINES = 500;
@@ -115,6 +115,11 @@ class Engine extends EventEmitter {
     if (this.wantRunning) await this._launch();
   }
 
+  async _relaunch() {
+    await this._kill();
+    if (this.wantRunning) await this._launch();
+  }
+
   async stop() {
     this.wantRunning = false;
     await this._kill();
@@ -134,8 +139,9 @@ class Engine extends EventEmitter {
 
     const cfg = buildConfig({
       videoMode: o.videoMode,
-      screens: this.safeMode ? o.screens.map((s) => ({ ...s })) : o.screens,
+      screens: o.screens,
       audioDevice: this.safeMode ? null : o.audioDevice,
+      audioDelayFrames: o.audioDelayFrames || 0,
       paths,
       amcpPort: this.amcpPort,
     });
@@ -198,9 +204,27 @@ class Engine extends EventEmitter {
 
     try { fs.writeFileSync(this.pidPath, String(proc.pid)); } catch { /* ni kritično */ }
 
+    const recent = [];
+    let audioFailHandled = false;
     const onOut = (buf) => {
       for (const line of buf.toString('utf8').split(/\r?\n/)) {
-        if (line.trim()) this._log(line);
+        if (!line.trim()) continue;
+        this._log(line);
+        recent.push(line);
+        if (recent.length > 60) recent.shift();
+        // Motor se ob napačni zvočni napravi NE ustavi, samo ostane brez zvoka.
+        // Zato to zaznamo sami in ga ponovno zaženemo s privzeto napravo.
+        if (!audioFailHandled && /Invalid OpenAL device/i.test(line)) {
+          audioFailHandled = true;
+          const devices = parseOpenAlDevices(recent);
+          const bad = (/Invalid OpenAL device:\s*(.*)$/i.exec(line) || [])[1] || '';
+          this.emit('audioDeviceFailed', { device: bad.trim(), devices });
+          if (!this.safeMode && this.wantRunning) {
+            this.safeMode = true;
+            this._log('Izbrane zvočne naprave ni bilo mogoče odpreti, preklapljam na privzeto napravo.');
+            setTimeout(() => this._relaunch(), 200);
+          }
+        }
       }
     };
     proc.stdout.on('data', onOut);

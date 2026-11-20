@@ -59,7 +59,10 @@
       <label class="field">
         <span>Izhod PROGRAM</span>
         <select id="set-output"></select>
-        <small>"Testno okno" odpre manjše okno na glavnem zaslonu, uporabno za preizkus brez drugega zaslona.</small>
+        <small>Slika gre čez cel izbran zaslon. "Samodejno" izbere prvi zaslon, ki ni glavni zaslon Windows.
+          "Testno okno" je manjše okno za preizkus brez drugega zaslona.</small>
+        <small id="out-resolved" class="info"></small>
+        <small id="displays-error" class="bad hidden"></small>
       </label>
       <button type="button" id="btn-refresh-displays" class="btn ghost small">Osveži seznam zaslonov</button>
 
@@ -67,6 +70,14 @@
         <span>Zvočni izhod</span>
         <select id="set-audio"></select>
         <small>Če izbrana naprava ne deluje, motor samodejno preklopi na privzeto.</small>
+        <small id="audio-warning" class="bad hidden"></small>
+      </label>
+
+      <label class="field">
+        <span>Uskladitev zvoka s sliko (v sličicah)</span>
+        <input type="number" id="set-avdelay" min="-25" max="25" step="1">
+        <small>Če zvok prehiteva sliko, vpiši pozitivno število (npr. 2 = zvok 2 sličici kasneje).
+          Če zvok zaostaja, vpiši negativno. Preveri s testnim posnetkom: blisk in pisk morata biti hkrati.</small>
       </label>
 
       <p class="warn">Sprememba nastavitev na kratko ponovno zažene motor (izhod za trenutek ugasne).</p>

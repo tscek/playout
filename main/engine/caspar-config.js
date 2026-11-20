@@ -34,7 +34,7 @@ function p(path) {
  * zaslon (to je zanesljivejše od pravega celozaslonskega načina, ki v
  * knjižnici SFML deluje le na glavnem zaslonu).
  */
-function screenConsumer({ display, keyOnly = false, name, windowedTest = false }) {
+function screenConsumer({ display, keyOnly = false, name, windowedTest = false, delayFrames = 0 }) {
   const lines = ['<screen>'];
   if (windowedTest) {
     // Testni način: navadno okno na glavnem zaslonu, 960×540.
@@ -54,9 +54,32 @@ function screenConsumer({ display, keyOnly = false, name, windowedTest = false }
   lines.push(`<key-only>${keyOnly ? 'true' : 'false'}</key-only>`);
   lines.push('<stretch>uniform</stretch>');
   lines.push('<vsync>true</vsync>');
+  if (delayFrames > 0) lines.push(`<delay>${Math.round(delayFrames)}</delay>`);
   if (name) lines.push(`<name>${xmlEscape(name)}</name>`);
   lines.push('</screen>');
   return lines.join('\n                    ');
+}
+
+/** Ime naprave, kot ga pozna OpenAL v CasparCG ("OpenAL Soft on <ime v Windows>"). */
+function openAlName(name) {
+  if (!name) return name;
+  return /^openal soft on /i.test(name) ? name : `OpenAL Soft on ${name}`;
+}
+
+/** Iz vrstic dnevnika CasparCG prebere seznam zvočnih naprav (izpiše ga ob napačnem imenu). */
+function parseOpenAlDevices(lines) {
+  const out = [];
+  let inside = false;
+  for (const raw of lines) {
+    const line = raw.replace(/^.*?\[info\]\s*/, '').trim();
+    if (/^-+ OpenAL Devices -+$/.test(line)) {
+      if (inside) break;
+      inside = true;
+      continue;
+    }
+    if (inside && line) out.push(line.replace(/^OpenAL Soft on /i, ''));
+  }
+  return out;
 }
 
 /**
@@ -67,14 +90,21 @@ function screenConsumer({ display, keyOnly = false, name, windowedTest = false }
  * @param {object} o.paths {media, log, data, template, htmlCache}
  * @param {number} o.amcpPort
  */
+function audioDelay(o) {
+  const av = Math.round(o.audioDelayFrames || 0);
+  return av > 0 ? `\n                        <delay>${av}</delay>` : '';
+}
+
 function buildConfig(o) {
   const consumers = [];
-  for (const s of o.screens) consumers.push(screenConsumer(s));
+  // Zamik zvoka: pozitiven = zvok kasneje (zakasnimo zvok), negativen = slika kasneje (zakasnimo sliko).
+  const av = Math.round(o.audioDelayFrames || 0);
+  for (const s of o.screens) consumers.push(screenConsumer({ ...s, delayFrames: av < 0 ? -av : 0 }));
   if (o.audioDevice !== false) {
     if (o.audioDevice) {
-      consumers.push(`<system-audio>\n                        <device-name>${xmlEscape(o.audioDevice)}</device-name>\n                    </system-audio>`);
+      consumers.push(`<system-audio>\n                        <device-name>${xmlEscape(openAlName(o.audioDevice))}</device-name>${audioDelay(o)}\n                    </system-audio>`);
     } else {
-      consumers.push('<system-audio />');
+      consumers.push(`<system-audio>${audioDelay(o)}\n                    </system-audio>`);
     }
   }
 
@@ -109,4 +139,4 @@ function buildConfig(o) {
 `;
 }
 
-module.exports = { buildConfig, VIDEO_MODES };
+module.exports = { buildConfig, VIDEO_MODES, openAlName, parseOpenAlDevices };

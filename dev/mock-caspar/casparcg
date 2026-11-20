@@ -6,8 +6,13 @@ const net = require('net');
 const cfg = fs.readFileSync(process.argv[2], 'utf8');
 const port = parseInt(/<port>(\d+)<\/port>/.exec(cfg)[1], 10);
 const log = (s) => process.stdout.write(`[mock] ${s}\n`);
-if (process.env.MOCK_CRASH_ON_DEVICE && cfg.includes('<device-name>')) {
-  log('Invalid OpenAL device'); process.exit(1);
+const dev = /<device-name>(.*)<\/device-name>/.exec(cfg);
+if (dev && process.env.MOCK_AUDIO_DEVICES && !process.env.MOCK_AUDIO_DEVICES.split('|').includes(dev[1])) {
+  // Kot pravi CasparCG: izpiše seznam naprav in napako, a teče naprej (brez zvoka).
+  log('[info]    -------- OpenAL Devices -------');
+  for (const d of process.env.MOCK_AUDIO_DEVICES.split('|')) log(`[info]    ${d}`);
+  log('[info]    -------- OpenAL Devices -------');
+  log(`[error]   [struct caspar::tag_msg_info * __ptr64] = Invalid OpenAL device: ${dev[1]}`);
 }
 const srv = net.createServer((sock) => {
   let buf = '';

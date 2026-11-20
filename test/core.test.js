@@ -64,7 +64,7 @@ test('konfiguracija: zaslon in zvočna naprava', () => {
   });
   assert.match(cfg, /<device>3<\/device>/);
   assert.match(cfg, /<borderless>true<\/borderless>/);
-  assert.match(cfg, /<device-name>Zvočniki \(Realtek\)<\/device-name>/);
+  assert.match(cfg, /<device-name>OpenAL Soft on Zvočniki \(Realtek\)<\/device-name>/);
   assert.match(cfg, /<media-path>C:\/m\/<\/media-path>/);
   assert.match(cfg, /<port>5255<\/port>/);
 });
@@ -97,18 +97,52 @@ test('motor: zagon, predvajanje, sesutje in obnova programa', async () => {
   }
 });
 
-test('motor: neveljavna zvočna naprava -> varni način', async () => {
-  process.env.MOCK_CRASH_ON_DEVICE = '1';
+test('motor: neveljavna zvočna naprava -> ponovni zagon s privzeto', async () => {
+  process.env.MOCK_AUDIO_DEVICES = 'OpenAL Soft on Speakers (Focusrite USB Audio)|OpenAL Soft on BenQ (NVIDIA)';
   const { ctl, engine } = makeController();
   try {
     ctl.settings.audioDevice = 'Ne obstaja';
     await ctl.init();
-    await waitFor(() => engine.status === 'running', 10000);
-    assert.strictEqual(engine.safeMode, true);
+    await waitFor(() => engine.safeMode && engine.status === 'running', 10000);
     const cfg = fs.readFileSync(engine.configPath, 'utf8');
     assert.ok(!cfg.includes('<device-name>'));
+    const st = ctl.getState();
+    assert.ok(st.audioDevices.includes('Speakers (Focusrite USB Audio)'));
+    assert.match(st.audioWarning, /Ne obstaja/);
   } finally {
-    delete process.env.MOCK_CRASH_ON_DEVICE;
+    delete process.env.MOCK_AUDIO_DEVICES;
+    await engine.stop();
+  }
+});
+
+test('veljavna zvočna naprava dobi predpono OpenAL in ostane izbrana', async () => {
+  process.env.MOCK_AUDIO_DEVICES = 'OpenAL Soft on Speakers (Focusrite USB Audio)';
+  const { ctl, engine } = makeController();
+  try {
+    ctl.settings.audioDevice = 'Speakers (Focusrite USB Audio)';
+    ctl.settings.audioDelayFrames = 2;
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    await new Promise((r) => setTimeout(r, 500));
+    assert.strictEqual(engine.safeMode, false);
+    const cfg = fs.readFileSync(engine.configPath, 'utf8');
+    assert.match(cfg, /<device-name>OpenAL Soft on Speakers \(Focusrite USB Audio\)<\/device-name>/);
+    assert.match(cfg, /<delay>2<\/delay>/);
+  } finally {
+    delete process.env.MOCK_AUDIO_DEVICES;
+    await engine.stop();
+  }
+});
+
+test('samodejni izhod izbere zunanji zaslon', async () => {
+  const { ctl, engine } = makeController();
+  try {
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    assert.strictEqual(ctl.resolvedOutput(), '\\\\.\\DISPLAY3');
+    const cfg = fs.readFileSync(engine.configPath, 'utf8');
+    assert.match(cfg, /<borderless>true<\/borderless>/);
+  } finally {
     await engine.stop();
   }
 });

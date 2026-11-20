@@ -16,9 +16,9 @@ const LAYER_MAIN = 10;
 
 const DEFAULT_SETTINGS = {
   videoMode: '1080p5000',
-  // 'test' = okno na glavnem zaslonu; sicer "device" ime zaslona (npr. \\.\DISPLAY2)
-  programOutput: 'test',
+  programOutput: 'auto', // 'auto' = prvi zaslon, ki ni glavni; 'test' = okno; sicer ime zaslona (npr. \\.\DISPLAY2)
   audioDevice: '', // '' = privzeta naprava sistema
+  audioDelayFrames: 0, // + = zvok kasneje, - = slika kasneje
 };
 
 function fpsOf(videoMode) {
@@ -45,14 +45,24 @@ class Controller extends EventEmitter {
     this.settingsFile = path.join(dataDir, 'settings.json');
     this.libraryFile = path.join(dataDir, 'library.json');
 
-    this.settings = { ...DEFAULT_SETTINGS, ...readJson(this.settingsFile, {}) };
+    const saved = readJson(this.settingsFile, {});
+    if (!saved.settingsVersion && saved.programOutput === 'test') saved.programOutput = 'auto'; // v0.1.0 je imel privzeto testno okno
+    this.settings = { ...DEFAULT_SETTINGS, ...saved, settingsVersion: 2 };
     this.library = readJson(this.libraryFile, { items: [] });
     this.displays = [];
     this.audioDevices = [];
     this.program = { item: null, startedAt: 0 }; // kaj je na programu
     this.lastError = '';
+    this.displaysError = '';
+    this.audioWarning = '';
 
     engine.on('status', () => this._changed());
+    engine.on('audioDeviceFailed', ({ device, devices }) => {
+      if (devices.length) this.engineAudioDevices = devices;
+      this.audioWarning = `Zvočne naprave "${device.replace(/^OpenAL Soft on /i, '')}" ni bilo mogoče odpreti. Zvok gre na privzeto napravo sistema.`;
+      this.lastError = this.audioWarning;
+      this._changed();
+    });
     engine.on('ready', () => this._restoreProgram());
   }
 
@@ -67,7 +77,10 @@ class Controller extends EventEmitter {
       settings: this.settings,
       videoModes: VIDEO_MODES,
       displays: this.displays.map((d) => ({ ...d, label: describeDisplay(d) })),
-      audioDevices: this.audioDevices,
+      audioDevices: [...new Set([...(this.engineAudioDevices || []), ...this.audioDevices])],
+      displaysError: this.displaysError,
+      audioWarning: this.audioWarning,
+      programOutputResolved: this.resolvedOutput(),
       library: this.library.items.map((it) => ({ ...it, missing: !fileExists(it.path) })),
       program: this.program.item
         ? { id: this.program.item.id, name: this.program.item.name, startedAt: this.program.startedAt }
@@ -90,20 +103,33 @@ class Controller extends EventEmitter {
 
   // ---------- motor ----------
 
+  /** Kateri zaslon se dejansko uporabi za PROGRAM (ime naprave, 'test' ali 'none'). */
+  resolvedOutput() {
+    const s = this.settings;
+    if (s.programOutput === 'test' || s.programOutput === 'none') return s.programOutput;
+    if (s.programOutput === 'auto') {
+      const ext = this.displays.find((x) => !x.primary);
+      return ext ? ext.device : 'test';
+    }
+    return this.displays.some((x) => x.device === s.programOutput) ? s.programOutput : 'test';
+  }
+
   engineOptions() {
     const s = this.settings;
     const screens = [];
-    if (s.programOutput === 'test') {
-      screens.push({ windowedTest: true, name: 'Playout PROGRAM (test)' });
-    } else if (s.programOutput !== 'none') {
-      const d = this.displays.find((x) => x.device === s.programOutput);
-      if (d) screens.push({ display: d, name: 'Playout PROGRAM' });
-      else screens.push({ windowedTest: true, name: 'Playout PROGRAM (zaslon ni najden)' });
+    const out = this.resolvedOutput();
+    if (out === 'test') {
+      const why = s.programOutput === 'test' ? '' : ' – izbran zaslon ni priklopljen';
+      screens.push({ windowedTest: true, name: `Playout PROGRAM (testno okno${why})` });
+    } else if (out !== 'none') {
+      const d = this.displays.find((x) => x.device === out);
+      screens.push({ display: d, name: 'Playout PROGRAM' });
     }
     return {
       videoMode: s.videoMode,
       screens,
       audioDevice: s.audioDevice || null,
+      audioDelayFrames: Number(s.audioDelayFrames) || 0,
       templateDir: this.templateDir,
     };
   }
@@ -116,9 +142,13 @@ class Controller extends EventEmitter {
   async refreshDisplays() {
     try {
       this.displays = await this.listDisplaysFn();
+      this.displaysError = '';
+      this.engine._log(`Zasloni: ${this.displays.map((d) => `#${d.index} ${d.device} ${d.width}x${d.height} @${d.x},${d.y}${d.primary ? ' glavni' : ''}`).join(' | ') || 'nobenega'}`);
     } catch (e) {
       this.displays = [];
-      this.lastError = `Zaslonov ni bilo mogoče prebrati: ${e.message}`;
+      this.displaysError = `Zaslonov ni bilo mogoče prebrati: ${e.message}`;
+      this.lastError = this.displaysError;
+      this.engine._log(this.displaysError);
     }
     this._changed();
     return this.displays;
@@ -132,16 +162,21 @@ class Controller extends EventEmitter {
   // ---------- nastavitve ----------
 
   async updateSettings(patch) {
-    const allowed = ['videoMode', 'programOutput', 'audioDevice'];
+    const allowed = ['videoMode', 'programOutput', 'audioDevice', 'audioDelayFrames'];
     const next = { ...this.settings };
     for (const k of allowed) if (k in patch) next[k] = patch[k];
     if (!VIDEO_MODES[next.videoMode]) this._error('Neznan video način');
+    next.audioDelayFrames = Math.max(-25, Math.min(25, Math.round(Number(next.audioDelayFrames) || 0)));
+    if (next.audioDevice !== this.settings.audioDevice) this.audioWarning = '';
 
     const engineRelevant = allowed.some((k) => next[k] !== this.settings[k]);
     this.settings = next;
     writeJson(this.settingsFile, this.settings);
     this._changed();
-    if (engineRelevant) await this.engine.restart(this.engineOptions());
+    if (engineRelevant) {
+      await this.refreshDisplays();
+      await this.engine.restart(this.engineOptions());
+    }
   }
 
   // ---------- knjižnica ----------
