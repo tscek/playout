@@ -46,7 +46,7 @@ function screenConsumer({ display, keyOnly = false, name, windowedTest = false, 
       '<windowed>true</windowed>',
       '<borderless>true</borderless>',
       '<always-on-top>true</always-on-top>',
-      '<x>0</x>', '<y>0</y>',
+      `<x>${display.offsetX || 0}</x>`, `<y>${display.offsetY || 0}</y>`,
       `<width>${display.width}</width>`, `<height>${display.height}</height>`,
       '<interactive>false</interactive>'
     );

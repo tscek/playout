@@ -3,7 +3,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell, screen } = require('electron');
 const { Engine } = require('./engine/engine');
 const { listDisplays } = require('./engine/displays');
 const { Controller } = require('./controller');
@@ -111,7 +111,7 @@ app.whenReady().then(async () => {
   controller = new Controller({
     engine,
     dataDir,
-    listDisplays,
+    listDisplays: () => listDisplays(screen),
     templateDir: path.join(engineDir, 'templates'),
   });
 

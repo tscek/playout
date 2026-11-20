@@ -70,7 +70,32 @@ while ($true) {
 ConvertTo-Json -InputObject @($out) -Compress
 `;
 
-function listDisplays() {
+/**
+ * Rezervni seznam iz Electrona, če PowerShell ne deluje. Predpostavi, da je
+ * prvi zaslon v seznamu Windows glavni zaslon na položaju 0,0 (običajno), zato
+ * uporabi zaslon #0 in okno premakne na fizične koordinate izbranega zaslona.
+ */
+function fromElectron(electronScreen) {
+  const primaryId = electronScreen.getPrimaryDisplay().id;
+  return electronScreen.getAllDisplays().map((d, i) => {
+    const r = typeof electronScreen.dipToScreenRect === 'function' ? electronScreen.dipToScreenRect(null, d.bounds) : d.bounds;
+    return {
+      index: 0,
+      offsetX: r.x,
+      offsetY: r.y,
+      device: `electron:${d.id}`,
+      adapter: '',
+      monitor: d.label || `Zaslon ${i + 1}`,
+      active: true,
+      primary: d.id === primaryId,
+      x: r.x, y: r.y, width: r.width, height: r.height,
+      hz: Math.round(d.displayFrequency || 0),
+      approx: true,
+    };
+  });
+}
+
+function listDisplays(electronScreen) {
   if (process.platform !== 'win32') {
     // Za razvoj na drugih sistemih: en navidezni zaslon.
     return Promise.resolve([
@@ -79,18 +104,32 @@ function listDisplays() {
     ]);
   }
   return new Promise((resolve, reject) => {
+    // -EncodedCommand: skripta gre v base64, da je Windows ne pokvari pri narekovajih.
+    const encoded = Buffer.from(PS_SCRIPT, 'utf16le').toString('base64');
     execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', PS_SCRIPT],
-      { windowsHide: true, timeout: 20000, maxBuffer: 1024 * 1024 },
-      (err, stdout) => {
-        if (err) return reject(err);
-        try {
-          const list = JSON.parse(stdout.trim() || '[]');
-          resolve(list.filter((d) => d.active));
-        } catch (e) {
-          reject(e);
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { windowsHide: true, timeout: 30000, maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        let list = null;
+        let problem = '';
+        if (err) {
+          problem = `${err.message} ${String(stderr || '').trim()}`.trim();
+        } else {
+          try {
+            list = JSON.parse(stdout.trim() || '[]').filter((d) => d.active);
+            if (!list.length) problem = 'PowerShell ni vrnil nobenega zaslona';
+          } catch (e) {
+            problem = `Nepričakovan odgovor PowerShell: ${String(stdout).slice(0, 200)}`;
+          }
         }
+        if (list && list.length) return resolve(list);
+        if (electronScreen) {
+          const fb = fromElectron(electronScreen);
+          fb.problem = problem;
+          return resolve(fb);
+        }
+        reject(new Error(problem));
       }
     );
   });
@@ -99,6 +138,7 @@ function listDisplays() {
 function describeDisplay(d) {
   const name = d.monitor && d.monitor !== 'Generic PnP Monitor' ? d.monitor : d.adapter;
   const prim = d.primary ? ', glavni' : '';
+  if (d.approx) return `${d.monitor} – ${d.width}×${d.height} (položaj ${d.x}, ${d.y}${prim})`;
   return `${name} – ${d.width}×${d.height} @ ${d.hz} Hz (položaj ${d.x}, ${d.y}${prim})`;
 }
 

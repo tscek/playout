@@ -35,6 +35,9 @@ jobs:
           cache: npm
       - run: npm ci
 
+      - name: Preizkus branja zaslonov (PowerShell)
+        run: node -e "require('./main/engine/displays').listDisplays().then(l => { console.log(JSON.stringify(l, null, 1)); if (!l.length) process.exit(1); }).catch(e => { console.error(e); process.exit(1); })"
+
       - name: Pripravi motor CasparCG
         run: node scripts/fetch-casparcg.js
         env:

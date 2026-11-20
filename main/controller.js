@@ -142,7 +142,9 @@ class Controller extends EventEmitter {
   async refreshDisplays() {
     try {
       this.displays = await this.listDisplaysFn();
-      this.displaysError = '';
+      this.displaysError = this.displays.problem
+        ? `Natančen seznam zaslonov ni na voljo (${this.displays.problem}). Uporabljam približen seznam.`
+        : '';
       this.engine._log(`Zasloni: ${this.displays.map((d) => `#${d.index} ${d.device} ${d.width}x${d.height} @${d.x},${d.y}${d.primary ? ' glavni' : ''}`).join(' | ') || 'nobenega'}`);
     } catch (e) {
       this.displays = [];

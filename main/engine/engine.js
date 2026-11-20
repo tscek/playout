@@ -97,6 +97,16 @@ class Engine extends EventEmitter {
     this.logLines.push(entry);
     if (this.logLines.length > MAX_LOG_LINES) this.logLines.splice(0, this.logLines.length - MAX_LOG_LINES);
     this.emit('log', entry);
+    // Dnevnik aplikacije tudi v datoteko (za diagnostiko na daljavo).
+    try {
+      if (!this._appLogPath) {
+        const dir = path.join(this.workDir, 'logs');
+        fs.mkdirSync(dir, { recursive: true });
+        const day = new Date().toISOString().slice(0, 10);
+        this._appLogPath = path.join(dir, `playout_${day}.log`);
+      }
+      fs.appendFile(this._appLogPath, `${new Date().toISOString()}  ${line}\n`, () => {});
+    } catch { /* ni kritično */ }
   }
 
   /** Zažene motor z nastavitvami (glej caspar-config.buildConfig). */
