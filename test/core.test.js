@@ -542,9 +542,87 @@ test('v0.7.0: nastavitve medija gredo k vnosom v playlisti', () => {
   assert.strictEqual(e2.inSec, 1);
   assert.strictEqual(e3.volumeDb, 0);
   assert.strictEqual(e3.fit, null);
-  const lib = JSON.parse(fs.readFileSync(path.join(dir, 'library.json'), 'utf8'));
+  const lib = JSON.parse(fs.readFileSync(ctl.libraryFile, 'utf8'));
   assert.strictEqual(lib.items[0].volumeDb, undefined);
   assert.strictEqual(lib.items[0].inSec, undefined);
-  const pl = JSON.parse(fs.readFileSync(path.join(dir, 'playlist.json'), 'utf8'));
+  const pl = JSON.parse(fs.readFileSync(ctl.playlistFile, 'utf8'));
   assert.strictEqual(pl.groups[0].items[1].muted, true);
+});
+
+test('projekti: medijska mapa, podmape, kopiranje, premik, izvoz in uvoz', async () => {
+  const dir = tmpDir();
+  const engine = new Engine({ casparDir: MOCK_DIR, workDir: path.join(dir, 'engine'), amcpPort: portBase++ });
+  const trashed = [];
+  const ctl = new Controller({ engine, dataDir: dir, listDisplays: async () => [], trashItem: async (p) => { trashed.push(p); fs.rmSync(p); } });
+  try {
+    assert.strictEqual(ctl.project.name, 'Moj projekt');
+    const media = path.join(dir, 'Oddaja');
+    fs.mkdirSync(path.join(media, 'Uvod'), { recursive: true });
+    fs.writeFileSync(path.join(media, 'Uvod', 'intro.mp4'), 'aaaa');
+    fs.writeFileSync(path.join(media, 'logo.png'), 'x');
+    fs.writeFileSync(path.join(media, 'opis.txt'), 'ni medij');
+    ctl.setMediaDir(media);
+    assert.deepStrictEqual(ctl.folders, ['Uvod']);
+    assert.deepStrictEqual(ctl.library.items.map((i) => i.rel).sort(), ['Uvod/intro.mp4', 'logo.png']);
+    const intro = ctl.library.items.find((i) => i.rel === 'Uvod/intro.mp4');
+    await ctl.addToGroup(ctl.playlist.groups[0].id, [intro.id]);
+    await ctl.setEntry(ctl.playlist.groups[0].items[0].id, { inSec: 2 });
+
+    // Datoteka od drugje se kopira v projektno mapo (v izbrano podmapo)
+    const outside = path.join(dir, 'zunaj.mp4');
+    fs.writeFileSync(outside, 'bbbbbb');
+    assert.strictEqual(ctl.createFolder('', 'Video'), 'Video');
+    assert.strictEqual(await ctl.importFiles([outside], 'Video'), 1);
+    assert.ok(fs.existsSync(path.join(media, 'Video', 'zunaj.mp4')));
+    assert.ok(fs.existsSync(outside));
+    assert.ok(ctl.library.items.some((i) => i.rel === 'Video/zunaj.mp4'));
+    await ctl.importFiles([outside], 'Video');
+    assert.ok(fs.existsSync(path.join(media, 'Video', 'zunaj (2).mp4')));
+
+    // Premik v drugo podmapo (tudi na disku), id ostane
+    await ctl.moveMedia(intro.id, 'Video');
+    assert.ok(fs.existsSync(path.join(media, 'Video', 'intro.mp4')));
+    assert.ok(!fs.existsSync(path.join(media, 'Uvod', 'intro.mp4')));
+    assert.strictEqual(intro.rel, 'Video/intro.mp4');
+
+    // Premik v Raziskovalcu: poveže se po imenu in velikosti
+    fs.renameSync(path.join(media, 'Video', 'intro.mp4'), path.join(media, 'Uvod', 'intro.mp4'));
+    ctl._rescan();
+    assert.strictEqual(ctl.library.items.find((i) => i.id === intro.id).rel, 'Uvod/intro.mp4');
+    // Izbrisana datoteka, ki ni v playlisti, izgine s seznama
+    fs.rmSync(path.join(media, 'Video', 'zunaj (2).mp4'));
+    ctl._rescan();
+    assert.ok(!ctl.library.items.some((i) => i.rel === 'Video/zunaj (2).mp4'));
+
+    // Brisanje iz aplikacije gre v koš
+    const logo = ctl.library.items.find((i) => i.rel === 'logo.png');
+    await ctl.removeItem(logo.id);
+    assert.deepStrictEqual(trashed, [path.join(media, 'logo.png')]);
+
+    // Izvoz, nov projekt, preklop
+    const file = path.join(dir, 'Oddaja.playout');
+    ctl.exportProject(file);
+    const firstId = ctl.projectId;
+    await ctl.createProject('Drugi');
+    assert.strictEqual(ctl.project.name, 'Drugi');
+    assert.strictEqual(ctl.library.items.length, 0);
+    await ctl.switchProject(firstId);
+    assert.strictEqual(ctl.playlist.groups[0].items.length, 1);
+
+    // Uvoz na "drugem računalniku": mediji v drugi mapi in drugače razporejeni
+    const other = path.join(dir, 'Drug PC');
+    fs.mkdirSync(path.join(other, 'Kar nekaj'), { recursive: true });
+    fs.writeFileSync(path.join(other, 'Kar nekaj', 'intro.mp4'), 'aaaa');
+    const res = await ctl.importProject(file, other);
+    assert.strictEqual(ctl.project.name, 'Moj projekt (2)');
+    assert.strictEqual(res.missing, 0);
+    const e = ctl.playlist.groups[0].items[0];
+    assert.strictEqual(e.inSec, 2);
+    const it = ctl.library.items.find((i) => i.id === e.mediaId);
+    assert.strictEqual(it.path, path.join(other, 'Kar nekaj', 'intro.mp4'));
+    assert.strictEqual(ctl.projects.list().length, 3);
+  } finally {
+    ctl._unwatch();
+    await engine.stop();
+  }
 });

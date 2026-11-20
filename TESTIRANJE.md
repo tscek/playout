@@ -1,6 +1,29 @@
-# Test v0.7.0: nastavitve pripadajo vnosu v playlisti
+# Test v0.8.0: projekti in projektna mapa
 
-Namesti novo verzijo čez staro. Nastavitve in seznam medijev ostanejo.
+Namesti novo verzijo čez staro. Dosedanji mediji in playlista so zdaj projekt "Moj projekt".
+
+## Novo v 0.8.0
+
+1. Zgoraj levo je gumb **📁 ime projekta**. Tam so vsi projekti, *+ Nov projekt*, ime, medijska mapa, izvoz in uvoz.
+2. **Medijska mapa**: klikni *Izberi mapo …* (ali "Izberi mapo" nad Mediji). Mediji levo so potem vse datoteke iz te mape
+   in podmap. Nova datoteka, ki jo dodaš v Raziskovalcu, se pojavi sama (v nekaj sekundah), izbrisana izgine.
+   Če je izbrisana datoteka v playlisti, ostane na seznamu rdeče.
+3. **Podmape**: klik na mapo jo zloži/razloži in izbere. **+ Mapa** naredi novo podmapo v izbrani mapi.
+   Medij povleci na mapo in se premakne tja, tudi na disku. Premik ali preimenovanje v Raziskovalcu playlista prenese.
+4. **Povleci datoteke od drugje** (npr. z namizja ali USB ključa) v Medije: kopirajo se v projektno mapo
+   (v mapo, na katero jih spustiš). Med kopiranjem piše "Kopiram …". Tudi *+ Dodaj medije* kopira v izbrano mapo.
+5. **Filter** Vse / Video / Slike / Zvok in **razvrščanje** po imenu, vrsti ali najnovejše najprej.
+6. **✕ pri mediju** iz projektne mape premakne datoteko v koš (vpraša prej).
+7. **Preklop projekta**: *Odpri* pri projektu. Program in preview se počistita (če je kaj na programu, vpraša).
+8. **Izvoz**: *Izvozi projekt …* naredi majhno datoteko `.playout` (playlista, nastavitve vnosov, akcije, brez medijev).
+   **Uvoz** na drugem računalniku: *Uvozi projekt …*, izberi datoteko, nato mapo z mediji. Posnetki se povežejo po poti
+   ali po imenu, tudi če so drugače razporejeni. Naprave, ki jih tam še ni, se dodajo; IP naslove popraviš v Akcijah.
+9. **⚠ zgoraj** pomeni, da naprava za akcije (ATEM, XR18) ni povezana. Klik odpre Akcije.
+10. LOOP pri mediju je odstranjen. Ponavljanje nastaviš pri vnosu (⚙, *ponavljaj posnetek*). Vnosi medijev, ki so imeli LOOP, so prestavljeni nanj.
+
+Preveri: projekt z mapo na drugem disku ali USB-ju, kopiranje večjega videa, premik datoteke, ki je v playlisti, in uvoz na prenosniku.
+
+# v0.7.0: nastavitve pripadajo vnosu v playlisti
 
 ## Novo v 0.7.0
 

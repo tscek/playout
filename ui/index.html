@@ -9,7 +9,9 @@
 <body>
   <header class="topbar">
     <div class="brand">Playout</div>
+    <button id="btn-project" class="btn ghost project-btn" title="Projekti: preklop, nov projekt, medijska mapa, izvoz in uvoz">📁 <span id="project-name">Projekt</span> ▾</button>
     <div id="engine-pill" class="pill pill-wait" title="Stanje motorja">Motor: povezujem …</div>
+    <button id="dev-warn" class="btn dev-warn hidden" title="Naprava za akcije ni povezana. Klikni za Akcije."></button>
     <div id="conn-banner" class="conn-banner hidden">Povezava z aplikacijo prekinjena, ponovno povezujem …</div>
     <div class="spacer"></div>
     <button id="btn-panic" class="btn panic" title="Program takoj na črno (ali logo) in brez zvoka. Klikni znova za izklop.">PANIKA</button>
@@ -118,6 +120,20 @@
         <div class="spacer"></div>
         <button id="btn-add" class="btn">+ Dodaj medije</button>
       </div>
+      <div class="lib-tools">
+        <span class="seg" id="lib-filter">
+          <button data-f="all" class="on">Vse</button><button data-f="video">Video</button><button data-f="image">Slike</button><button data-f="audio">Zvok</button>
+        </span>
+        <select id="lib-sort" title="Razvrsti">
+          <option value="name">po imenu</option>
+          <option value="type">po vrsti</option>
+          <option value="date">najnovejše najprej</option>
+        </select>
+        <div class="spacer"></div>
+        <button id="btn-new-folder" class="btn ghost small" title="Nova podmapa v projektni mapi">+ Mapa</button>
+      </div>
+      <div id="lib-folder" class="lib-folder"></div>
+      <div id="lib-copying" class="lib-copying hidden"></div>
       <div id="drop-hint" class="drop-hint">Povleci datoteke sem ali klikni "Dodaj medije".</div>
       <ul id="library" class="library-list"></ul>
     </section>
@@ -185,6 +201,41 @@
       <div class="about" id="about"></div>
       <button type="button" id="btn-test-media" class="btn ghost small">Dodaj testne posnetke (sinhronizacija slike in zvoka)</button>
       <button type="button" id="btn-open-logs" class="btn ghost small">Odpri mapo z dnevniki motorja</button>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-project" class="dialog">
+    <form method="dialog">
+      <h2>Projekti</h2>
+      <ul id="project-list" class="project-list"></ul>
+      <div class="row-btns">
+        <input id="new-project-name" class="text-input" placeholder="Ime novega projekta">
+        <button type="button" id="btn-project-new" class="btn">+ Nov projekt</button>
+      </div>
+      <h3>Odprt projekt</h3>
+      <label class="field">
+        <span>Ime</span>
+        <input id="project-rename" class="text-input">
+      </label>
+      <div class="field">
+        <span>Medijska mapa</span>
+        <div class="row-btns">
+          <code id="project-dir" class="project-dir"></code>
+          <button type="button" id="btn-project-dir" class="btn ghost small">Izberi mapo …</button>
+        </div>
+        <small>Mediji levo so datoteke iz te mape in njenih podmap. Datoteke, ki jih povlečeš v aplikacijo, se kopirajo vanjo.</small>
+      </div>
+      <div class="field">
+        <span>Prenos na drug računalnik</span>
+        <div class="row-btns">
+          <button type="button" id="btn-project-export" class="btn ghost small">Izvozi projekt …</button>
+          <button type="button" id="btn-project-import" class="btn ghost small">Uvozi projekt …</button>
+        </div>
+        <small>Izvoz je majhna datoteka .playout s playlisto in nastavitvami (brez medijev). Pri uvozu izbereš mapo z mediji, posnetki se povežejo sami.</small>
+      </div>
+      <div class="dialog-actions">
+        <button value="close" class="btn">Zapri</button>
+      </div>
     </form>
   </dialog>
 

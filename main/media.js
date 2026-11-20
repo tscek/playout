@@ -26,7 +26,6 @@ function makeItem(file) {
     path: file,
     name: path.basename(file),
     type,
-    loop: false,
   };
 }
 

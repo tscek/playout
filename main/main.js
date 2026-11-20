@@ -119,10 +119,11 @@ app.whenReady().then(async () => {
     osc: new OscListener(0),
     templateDir: path.join(engineDir, 'templates'),
     actions: new ActionManager({ file: path.join(dataDir, 'actions.json'), log: (l) => engine._log(l) }),
+    trashItem: (p) => shell.trashItem(p),
   });
 
   const extraActions = {
-    'library.pickFiles': async () => {
+    'library.pickFiles': async (a) => {
       const res = await dialog.showOpenDialog(mainWindow, {
         title: 'Dodaj medije',
         properties: ['openFile', 'multiSelections'],
@@ -132,7 +133,42 @@ app.whenReady().then(async () => {
         ],
       });
       if (res.canceled) return 0;
-      return controller.addFiles(res.filePaths);
+      return controller.importFiles(res.filePaths, a && a.folder);
+    },
+    'project.pickFolder': async () => {
+      const res = await dialog.showOpenDialog(mainWindow, {
+        title: 'Medijska mapa projekta',
+        properties: ['openDirectory', 'createDirectory'],
+        defaultPath: controller.project.mediaDir || undefined,
+      });
+      if (res.canceled || !res.filePaths.length) return null;
+      controller.setMediaDir(res.filePaths[0]);
+      return res.filePaths[0];
+    },
+    'project.export': async () => {
+      const safe = controller.project.name.replace(/[<>:"/\\|?*]/g, '').trim() || 'projekt';
+      const res = await dialog.showSaveDialog(mainWindow, {
+        title: 'Izvozi projekt',
+        defaultPath: path.join(controller.project.mediaDir || app.getPath('documents'), `${safe}.playout`),
+        filters: [{ name: 'Projekt Playout', extensions: ['playout'] }],
+      });
+      if (res.canceled || !res.filePath) return null;
+      return controller.exportProject(res.filePath);
+    },
+    'project.import': async () => {
+      const f = await dialog.showOpenDialog(mainWindow, {
+        title: 'Uvozi projekt',
+        properties: ['openFile'],
+        filters: [{ name: 'Projekt Playout', extensions: ['playout'] }],
+      });
+      if (f.canceled || !f.filePaths.length) return null;
+      const d = await dialog.showOpenDialog(mainWindow, {
+        title: 'Kje so mediji tega projekta? Izberi medijsko mapo',
+        properties: ['openDirectory'],
+        defaultPath: path.dirname(f.filePaths[0]),
+      });
+      if (d.canceled || !d.filePaths.length) return null;
+      return controller.importProject(f.filePaths[0], d.filePaths[0]);
     },
     'app.openLogs': () => shell.openPath(path.join(engineDir, 'logs')),
     'app.info': () => ({
@@ -144,7 +180,7 @@ app.whenReady().then(async () => {
     'library.addTestMedia': () => {
       const dir = path.join(resourcesDir(), app.isPackaged ? 'test-media' : 'assets/test-media');
       const files = fs.existsSync(dir) ? fs.readdirSync(dir).map((f) => path.join(dir, f)) : [];
-      return controller.addFiles(files);
+      return controller.importFiles(files);
     },
   };
 

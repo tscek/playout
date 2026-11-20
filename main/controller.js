@@ -12,6 +12,7 @@ const { VIDEO_MODES } = require('./engine/caspar-config');
 const { describeDisplay } = require('./engine/displays');
 const { Playlist } = require('./playlist');
 const { probeSize } = require('./probe');
+const { ProjectStore, scanMedia, freeName, safeFolderName, safeRelFolder, isInside, toRel } = require('./projects');
 
 const PROGRAM_CHANNEL = 1;
 const PREVIEW_CHANNEL = 2;
@@ -59,8 +60,9 @@ class Controller extends EventEmitter {
    * @param {string} o.dataDir
    * @param {() => Promise<object[]>} o.listDisplays
    */
-  constructor({ engine, dataDir, listDisplays, templateDir, monitors = null, osc = null, actions = null }) {
+  constructor({ engine, dataDir, listDisplays, templateDir, monitors = null, osc = null, actions = null, trashItem = null }) {
     super();
+    this.trashItem = trashItem; // premik datoteke v koš (Electron shell.trashItem)
     this.monitors = monitors; // { 1: ChannelMonitor, 2: ChannelMonitor }
     this.actions = actions; // shranjene akcije (ATEM, XR18, HTTP, OSC)
     if (actions) actions.on('changed', () => this._changed());
@@ -71,18 +73,19 @@ class Controller extends EventEmitter {
     this.templateDir = templateDir;
 
     this.settingsFile = path.join(dataDir, 'settings.json');
-    this.libraryFile = path.join(dataDir, 'library.json');
-    this.playlistFile = path.join(dataDir, 'playlist.json');
     this.stillDir = path.join(dataDir, 'stills'); // kopije slik za predvajanje s prileganjem
 
     const saved = readJson(this.settingsFile, {});
     if (!saved.settingsVersion && saved.programOutput === 'test') saved.programOutput = 'auto'; // v0.1.0 je imel privzeto testno okno
     this.settings = { ...DEFAULT_SETTINGS, ...saved, settingsVersion: 2 };
-    this.library = readJson(this.libraryFile, { items: [] });
     this.displays = [];
     this.audioDevices = [];
-    this.playlist = new Playlist(readJson(this.playlistFile, null));
-    this._migrateLook();
+    this.projects = new ProjectStore(dataDir);
+    this.projects.ensure({ panicSource: this.settings.panicSource || '' });
+    this.copying = null; // { name, done, total } med kopiranjem v projektno mapo
+    this.folders = [];
+    this.folderError = '';
+    this._openProject(this.projects.currentId);
     // src = { groupId, entryId }, če je posnetek prišel iz playliste
     this.program = { item: null, startedAt: 0, src: null }; // kaj je na programu
     this.preview = { item: null, src: null, seek: 0 }; // kaj je v preview
@@ -153,6 +156,7 @@ class Controller extends EventEmitter {
       })),
       panic: this.panic,
       actions: this.actions ? this.actions.getState() : { devices: [], actions: [] },
+      project: this.projectState(),
       transitions: TRANSITIONS,
       directions: DIRECTIONS,
       times: this.times,
@@ -278,6 +282,10 @@ class Controller extends EventEmitter {
     const engineRelevant = allowed.some((k) => next[k] !== this.settings[k]);
     this.settings = next;
     writeJson(this.settingsFile, this.settings);
+    if (panicChanged && this.project) {
+      this.project.panicSource = next.panicSource;
+      this._saveProjectMeta();
+    }
     this._changed();
     if (engineRelevant) {
       await this.refreshDisplays();
@@ -367,6 +375,12 @@ class Controller extends EventEmitter {
     let moved = false;
     for (const it of this.library.items) {
       const look = {};
+      if ('loop' in it) {
+        // v0.8.0: ponavljanje je samo še pri vnosu ("ponavljaj posnetek")
+        if (it.loop) for (const g of this.playlist.groups) for (const e of g.items) if (e.mediaId === it.id && !e.end) e.end = 'loop';
+        delete it.loop;
+        moved = true;
+      }
       for (const k of ['volumeDb', 'muted', 'fit', 'zoom', 'posX', 'posY', 'inSec', 'outSec']) {
         if (!(k in it)) continue;
         if (!['inSec', 'outSec'].includes(k) && it[k] !== null) look[k] = it[k];
@@ -382,22 +396,406 @@ class Controller extends EventEmitter {
     }
   }
 
-  removeItem(id) {
+  // ---------- projekti ----------
+
+  /** Naloži projekt (seznam medijev, playlisto, mapo). Ne dotika se programa in preview. */
+  _openProject(id) {
+    this._unwatch();
+    const dir = this.projects.dir(id);
+    this.projectId = id;
+    this.project = this.projects.meta(id);
+    this.libraryFile = path.join(dir, 'library.json');
+    this.playlistFile = path.join(dir, 'playlist.json');
+    this.library = readJson(this.libraryFile, { items: [] });
+    if (!Array.isArray(this.library.items)) this.library.items = [];
+    this.playlist = new Playlist(readJson(this.playlistFile, null));
+    this._migrateLook();
+    this.settings.panicSource = this.project.panicSource || '';
+    this.folders = [];
+    this.folderError = '';
+    this._resolvePaths();
+    this._rescan();
+    this._watch();
+  }
+
+  _saveProjectMeta() {
+    this.projects.saveMeta(this.projectId, this.project);
+  }
+
+  /** Poti medijev iz projektne mape (rel) so vedno glede na trenutno mapo. */
+  _resolvePaths() {
+    const dir = this.project.mediaDir;
+    for (const it of this.library.items) {
+      if (it.rel && dir) it.path = path.join(dir, ...it.rel.split('/'));
+      else if (!it.rel && dir && it.path && isInside(dir, it.path)) it.rel = toRel(dir, it.path);
+    }
+  }
+
+  _watch() {
+    const dir = this.project.mediaDir;
+    if (!dir) return;
+    try {
+      this._watcher = fs.watch(dir, { recursive: true }, () => this._scheduleRescan());
+      this._watcher.on('error', () => {});
+      if (this._watcher.unref) this._watcher.unref();
+    } catch {
+      this._watcher = null; // spremljanje ni na voljo: ostane redno preverjanje
+    }
+    this._rescanInterval = setInterval(() => this._scheduleRescan(0), 15000);
+    if (this._rescanInterval.unref) this._rescanInterval.unref();
+  }
+
+  _unwatch() {
+    if (this._watcher) {
+      try { this._watcher.close(); } catch { /* ni pomembno */ }
+    }
+    this._watcher = null;
+    clearInterval(this._rescanInterval);
+    clearTimeout(this._rescanDebounce);
+  }
+
+  _scheduleRescan(delay = 500) {
+    clearTimeout(this._rescanDebounce);
+    this._rescanDebounce = setTimeout(() => {
+      try {
+        if (this._rescan()) this._changed();
+      } catch { /* naslednjič */ }
+    }, delay);
+    if (this._rescanDebounce.unref) this._rescanDebounce.unref();
+  }
+
+  /**
+   * Uskladi seznam medijev s projektno mapo: nove datoteke doda, premaknjene/preimenovane poveže
+   * (po imenu in velikosti), izbrisane odstrani (če niso v playlisti; sicer so označene kot manjkajoče).
+   * Vrne true, če se je kaj spremenilo.
+   */
+  _rescan() {
+    const dir = this.project.mediaDir;
+    if (!dir) {
+      const had = this.folders.length || this.folderError;
+      this.folders = [];
+      this.folderError = '';
+      return !!had;
+    }
+    let scan;
+    try {
+      scan = scanMedia(dir);
+    } catch {
+      const msg = `Projektne mape ni mogoče prebrati: ${dir}`;
+      const changed = this.folderError !== msg;
+      this.folderError = msg;
+      return changed;
+    }
+    let changed = !!this.folderError || JSON.stringify(scan.folders) !== JSON.stringify(this.folders);
+    this.folderError = '';
+    this.folders = scan.folders;
+    const key = (r) => r.toLowerCase();
+    const byRel = new Map();
+    for (const it of this.library.items) if (it.rel) byRel.set(key(it.rel), it);
+    const seen = new Set();
+    const fresh = [];
+    for (const f of scan.files) {
+      const it = byRel.get(key(f.rel));
+      if (!it) {
+        fresh.push(f);
+        continue;
+      }
+      seen.add(it);
+      if (it.rel !== f.rel || it.size !== f.size || it.mtimeMs !== f.mtimeMs || it.path !== f.abs) {
+        Object.assign(it, { rel: f.rel, size: f.size, mtimeMs: f.mtimeMs, path: f.abs });
+        changed = true;
+      }
+    }
+    // Manjkajoči: iz mape, ki jih ni več, in zunanji, katerih datoteke ni (npr. projekt z drugega računalnika).
+    const lost = this.library.items.filter((it) => (it.rel ? !seen.has(it) : !fs.existsSync(it.path)));
+    for (const f of fresh) {
+      const name = path.basename(f.abs);
+      const same = lost.filter((it) => it.name.toLowerCase() === name.toLowerCase());
+      const match = same.find((it) => it.size && it.size === f.size) || (same.length === 1 ? same[0] : null);
+      if (match) {
+        Object.assign(match, { rel: f.rel, path: f.abs, size: f.size, mtimeMs: f.mtimeMs, name });
+        lost.splice(lost.indexOf(match), 1);
+      } else {
+        const item = makeItem(f.abs);
+        if (!item) continue;
+        Object.assign(item, { rel: f.rel, size: f.size, mtimeMs: f.mtimeMs });
+        this._probe(item);
+        this.library.items.push(item);
+      }
+      changed = true;
+    }
+    const used = new Set(this.playlist.groups.flatMap((g) => g.items.map((e) => e.mediaId)));
+    if (this.settings.panicSource) used.add(this.settings.panicSource);
+    for (const s of [this.program, this.preview]) if (s && s.item) used.add(s.item.id);
+    const drop = new Set(lost.filter((it) => it.rel && !used.has(it.id)));
+    if (drop.size) {
+      this.library.items = this.library.items.filter((it) => !drop.has(it));
+      changed = true;
+    }
+    if (changed) writeJson(this.libraryFile, this.library);
+    return changed;
+  }
+
+  /** Projekti za vmesnik. */
+  projectState() {
+    return {
+      id: this.projectId,
+      name: this.project.name,
+      mediaDir: this.project.mediaDir,
+      folders: this.folders,
+      folderError: this.folderError,
+      copying: this.copying,
+      list: this.projects.list(),
+    };
+  }
+
+  _requireIdle(what) {
+    if (this.program.item && !this.panic) this._error(`${what} ni mogoče, ko je kaj na programu. Najprej počisti program.`);
+  }
+
+  /** Odpre drug projekt. Program in preview se počistita. */
+  async switchProject(id) {
+    if (id === this.projectId) return;
+    if (!this.projects.has(id)) this._error('Projekt ne obstaja');
+    await this._clearAll();
+    this.projects.setCurrent(id);
+    this._openProject(id);
+    if (this.panic && this.engine.status === 'running') await this._applyPanic().catch(() => {});
+    this._changed();
+  }
+
+  async _clearAll() {
+    if (this.engine.status === 'running') {
+      if (this.program.item) await this.clearProgram(false).catch(() => {});
+      if (this.preview.item) await this.clearPreview().catch(() => {});
+    }
+    this.program = { item: null, startedAt: 0, src: null };
+    this.preview = { item: null, src: null, seek: 0 };
+    this.cuedId = null;
+    this.autoCuedId = null;
+    this._clearImageTimer();
+  }
+
+  async createProject(name, mediaDir = null) {
+    const id = this.projects.create(name, mediaDir || null);
+    await this.switchProject(id);
+    return id;
+  }
+
+  renameProject(id, name) {
+    const nm = String(name || '').trim();
+    if (!nm) this._error('Vpiši ime projekta');
+    const meta = this.projects.meta(id);
+    meta.name = nm;
+    this.projects.saveMeta(id, meta);
+    if (id === this.projectId) this.project.name = nm;
+    this._changed();
+  }
+
+  removeProject(id) {
+    this.projects.remove(id);
+    this._changed();
+  }
+
+  /** Nastavi medijsko mapo projekta. */
+  setMediaDir(dir) {
+    if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) this._error('Mapa ne obstaja');
+    this._unwatch();
+    // Zunanji posnetki, ki so v novi mapi, dobijo relativno pot; ostali iz stare mape postanejo zunanji.
+    for (const it of this.library.items) if (it.rel && !isInside(dir, it.path)) delete it.rel;
+    this.project.mediaDir = dir;
+    this._saveProjectMeta();
+    this._resolvePaths();
+    writeJson(this.libraryFile, this.library);
+    this._rescan();
+    this._watch();
+    this._changed();
+  }
+
+  _folderAbs(rel) {
+    if (!this.project.mediaDir) this._error('Projekt nima izbrane medijske mape (Projekt → Medijska mapa)');
+    const r = safeRelFolder(rel);
+    return path.join(this.project.mediaDir, ...r.split('/').filter(Boolean));
+  }
+
+  /** Nova podmapa v projektni mapi. */
+  createFolder(parentRel, name) {
+    const dir = path.join(this._folderAbs(parentRel), safeFolderName(name));
+    if (fs.existsSync(dir)) this._error('Mapa s tem imenom že obstaja');
+    fs.mkdirSync(dir, { recursive: true });
+    this._rescan();
+    this._changed();
+    return toRel(this.project.mediaDir, dir);
+  }
+
+  /**
+   * Doda datoteke: s projektno mapo jih kopira vanjo (v podmapo folderRel), sicer jih samo doda na seznam.
+   * Mape se kopirajo z vsebino (samo medijske datoteke).
+   */
+  async importFiles(paths, folderRel = '') {
+    const list = (paths || []).filter(Boolean);
+    if (!this.project.mediaDir) return this.addFiles(list);
+    const target = this._folderAbs(folderRel);
+    const jobs = []; // [src, destDir]
+    for (const p of list) {
+      let st;
+      try { st = fs.statSync(p); } catch { continue; }
+      if (st.isDirectory()) {
+        if (isInside(this.project.mediaDir, p) || path.resolve(p) === path.resolve(this.project.mediaDir)) continue;
+        const destRoot = path.join(target, path.basename(p));
+        for (const f of scanMedia(p).files) jobs.push([f.abs, path.dirname(path.join(destRoot, ...f.rel.split('/')))]);
+      } else if (makeItem(p)) {
+        if (isInside(this.project.mediaDir, p)) continue; // že v mapi
+        jobs.push([p, target]);
+      }
+    }
+    if (!jobs.length) {
+      this._rescan();
+      this._changed();
+      return 0;
+    }
+    let done = 0;
+    try {
+      for (const [src, destDir] of jobs) {
+        this.copying = { name: path.basename(src), done, total: jobs.length };
+        this._changed();
+        fs.mkdirSync(destDir, { recursive: true });
+        const dest = path.join(destDir, freeName(destDir, path.basename(src)));
+        const tmp = `${dest}.kopiram`;
+        await fs.promises.copyFile(src, tmp);
+        await fs.promises.rename(tmp, dest);
+        done++;
+      }
+    } catch (e) {
+      this._error(`Kopiranje v projektno mapo ni uspelo: ${e.message}`);
+    } finally {
+      this.copying = null;
+      this._rescan();
+      this._changed();
+    }
+    return done;
+  }
+
+  /** Premakne datoteko v drugo podmapo projektne mape (tudi na disku). */
+  async moveMedia(id, folderRel) {
+    const it = this._item(id);
+    if (!it.rel) this._error('Premikati je mogoče samo datoteke iz projektne mape');
+    const destDir = this._folderAbs(folderRel);
+    if (path.resolve(path.dirname(it.path)) === path.resolve(destDir)) return;
+    if ((this.program.item && this.program.item.id === id) || (this.preview.item && this.preview.item.id === id)) {
+      this._error('Posnetek je na programu ali v preview. Premakni ga, ko ni v uporabi.');
+    }
+    fs.mkdirSync(destDir, { recursive: true });
+    const dest = path.join(destDir, freeName(destDir, path.basename(it.path)));
+    try {
+      await fs.promises.rename(it.path, dest);
+    } catch (e) {
+      if (e.code === 'EXDEV') {
+        await fs.promises.copyFile(it.path, dest);
+        await fs.promises.unlink(it.path);
+      } else if (['EBUSY', 'EPERM', 'EACCES'].includes(e.code)) {
+        this._error('Datoteke ni mogoče premakniti, ker jo uporablja drug program.');
+      } else this._error(`Premik ni uspel: ${e.message}`);
+    }
+    it.rel = toRel(this.project.mediaDir, dest);
+    it.path = dest;
+    it.name = path.basename(dest);
+    writeJson(this.libraryFile, this.library);
+    this._rescan();
+    this._changed();
+  }
+
+  /** Datoteko iz projektne mape premakne v koš; zunanjo samo odstrani s seznama. Odstrani jo tudi iz playliste. */
+  async removeItem(id) {
+    const it = this._item(id);
+    if ((this.program.item && this.program.item.id === id) || (this.preview.item && this.preview.item.id === id)) {
+      this._error('Posnetek je na programu ali v preview. Najprej ga počisti.');
+    }
+    if (it.rel && fs.existsSync(it.path)) {
+      if (!this.trashItem) this._error('Brisanje datotek ni na voljo');
+      try {
+        await this.trashItem(it.path);
+      } catch (e) {
+        this._error(`Datoteke ni bilo mogoče premakniti v koš: ${e.message}`);
+      }
+    }
     this.library.items = this.library.items.filter((x) => x.id !== id);
     this.playlist.removeMedia(id);
     if (this.settings.panicSource === id) {
       this.settings.panicSource = '';
-      writeJson(this.settingsFile, this.settings);
+      this.project.panicSource = '';
+      this._saveProjectMeta();
     }
     writeJson(this.playlistFile, this.playlist.toJSON());
     this._saveLibrary();
   }
 
-  setLoop(id, loop) {
-    const it = this.library.items.find((x) => x.id === id);
-    if (!it) return;
-    it.loop = !!loop;
-    this._saveLibrary();
+  /** Izvoz projekta v majhno datoteko (brez medijev; poti glede na projektno mapo). */
+  exportProject(file) {
+    const data = {
+      format: 'playout-project',
+      version: 1,
+      name: this.project.name,
+      exportedAt: new Date().toISOString(),
+      mediaDirName: this.project.mediaDir ? path.basename(this.project.mediaDir) : null,
+      panicSource: this.settings.panicSource || '',
+      library: this.library.items.map((it) => {
+        const o = { id: it.id, name: it.name, type: it.type };
+        if (it.rel) o.rel = it.rel;
+        else o.path = it.path;
+        for (const k of ['size', 'width', 'height']) if (it[k]) o[k] = it[k];
+        return o;
+      }),
+      playlist: this.playlist.toJSON(),
+      actions: this.actions ? { devices: this.actions.devices, actions: this.actions.actions } : null,
+    };
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+    return file;
+  }
+
+  /** Uvoz projekta: nov projekt z medijsko mapo mediaDir; posnetki se povežejo po poti ali imenu. */
+  async importProject(file, mediaDir) {
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      this._error('Datoteke projekta ni mogoče prebrati');
+    }
+    if (!data || data.format !== 'playout-project') this._error('To ni datoteka projekta Playout');
+    if (mediaDir && (!fs.existsSync(mediaDir) || !fs.statSync(mediaDir).isDirectory())) this._error('Medijska mapa ne obstaja');
+    const id = this.projects.create(data.name || path.basename(file, path.extname(file)), mediaDir || null);
+    const dir = this.projects.dir(id);
+    const items = (Array.isArray(data.library) ? data.library : [])
+      .filter((it) => it && typeof it.id === 'string' && (it.rel || it.path))
+      .map((it) => {
+        const o = { id: it.id, name: String(it.name || ''), type: it.type };
+        if (it.rel && mediaDir) {
+          o.rel = safeRelFolder(it.rel);
+          o.path = path.join(mediaDir, ...o.rel.split('/'));
+        } else o.path = it.path || it.rel;
+        if (!o.name) o.name = path.basename(o.path);
+        for (const k of ['size', 'width', 'height']) if (it[k]) o[k] = it[k];
+        return o;
+      });
+    writeJson(path.join(dir, 'library.json'), { items });
+    writeJson(path.join(dir, 'playlist.json'), data.playlist || null);
+    const meta = this.projects.meta(id);
+    meta.panicSource = typeof data.panicSource === 'string' ? data.panicSource : '';
+    this.projects.saveMeta(id, meta);
+    // Akcije in naprave, ki jih na tem računalniku še ni, se dodajo (IP naslove popraviš v Akcijah).
+    if (this.actions && data.actions) {
+      for (const d of data.actions.devices || []) {
+        if (d && d.id && !this.actions.devices.some((x) => x.id === d.id)) await this.actions.saveDevice(d).catch(() => {});
+      }
+      for (const a of data.actions.actions || []) {
+        if (a && a.id && !this.actions.actions.some((x) => x.id === a.id)) {
+          try { this.actions.saveAction(a); } catch { /* ni kritično */ }
+        }
+      }
+    }
+    await this.switchProject(id);
+    const missing = this.library.items.filter((it) => !fs.existsSync(it.path)).length;
+    return { id, missing };
   }
 
   moveItem(id, toIndex) {
@@ -554,7 +952,7 @@ class Controller extends EventEmitter {
     return {
       end,
       explicit: !!(e && e.end),
-      loop: end === 'loop' || !!item.loop,
+      loop: end === 'loop',
       inSec: inSec || null,
       outSec: outSec || null,
       inF: inSec ? Math.round(inSec * fps) : 0,

@@ -129,94 +129,217 @@ function renderEngine() {
 
 const TYPE_LABEL = { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK' };
 
+// Mediji: drevo projektne mape, filter in razvrščanje (shrani se v tem brskalniku).
+const lsGet = (k, d) => {
+  try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; }
+};
+const lsSet = (k, v) => {
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ni pomembno */ }
+};
+let libFilter = lsGet('libFilter', 'all');
+let libSort = lsGet('libSort', 'name');
+let foldedFolders = new Set(lsGet('foldedFolders', []));
+let currentFolder = ''; // izbrana podmapa (za + Mapa, Dodaj medije)
+let newFolderOpen = false;
+let libOrder = []; // vidni vrstni red (za puščici)
+const TYPE_ORDER = { video: 0, image: 1, audio: 2 };
+
+function sortItems(items) {
+  const byName = (a, b) => a.name.localeCompare(b.name, 'sl', { numeric: true, sensitivity: 'base' });
+  const arr = [...items];
+  if (libSort === 'type') arr.sort((a, b) => (TYPE_ORDER[a.type] - TYPE_ORDER[b.type]) || byName(a, b));
+  else if (libSort === 'date') arr.sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0) || byName(a, b));
+  else arr.sort(byName);
+  return arr;
+}
+
+function libItemRow(it, depth, ctx) {
+  const { pgmId, pvwId } = ctx;
+  const li = document.createElement('li');
+  li.dataset.id = it.id;
+  li.style.paddingLeft = `${8 + depth * 16}px`;
+  if (!previewMode() && it.id === selectedId) li.classList.add('selected');
+  if (it.id === pgmId) li.classList.add('onair');
+  if (previewMode() && it.id === pvwId) li.classList.add('inpvw');
+  if (it.missing) li.classList.add('missing');
+  li.title = it.missing ? `Datoteka ne obstaja: ${it.path}` : it.path;
+  li.draggable = true;
+  li.ondragstart = (ev) => {
+    drag = { kind: 'media', id: it.id };
+    ev.dataTransfer.effectAllowed = 'copyMove';
+    ev.dataTransfer.setData('text/plain', it.name);
+  };
+  li.ondragend = () => { drag = null; };
+  li.append(el('span', `type ${it.type}`, TYPE_LABEL[it.type] || it.type), el('span', 'name', it.name));
+  if (previewMode() && it.id === pvwId) li.append(el('span', 'badge pvw', 'PVW'));
+  if (it.id === pgmId) li.append(el('span', 'badge pgm', 'PGM'));
+
+  const plus = el('button', 'item-btn', '+');
+  const tg = targetGroup();
+  plus.title = tg ? `Dodaj v skupino "${tg.name}"` : 'Dodaj v playlist';
+  plus.onclick = (ev) => {
+    ev.stopPropagation();
+    const g = targetGroup();
+    if (g) run('playlist.add', { groupId: g.id, mediaIds: [it.id] });
+  };
+  li.append(plus);
+
+  const del = el('button', 'item-btn', '✕');
+  const inFolder = !!it.rel;
+  del.title = inFolder ? 'Izbriši datoteko (gre v koš) in jo odstrani iz playliste' : 'Odstrani s seznama in iz playliste (datoteka ostane na disku)';
+  del.onclick = (ev) => {
+    ev.stopPropagation();
+    if (it.id === pgmId || it.id === pvwId) {
+      showError('Posnetek je na programu ali v preview. Najprej ga počisti.');
+      return;
+    }
+    const used = state.playlist.reduce((n, g) => n + g.items.filter((e) => e.mediaId === it.id).length, 0);
+    const msg = (inFolder && !it.missing ? `Datoteko "${it.name}" premaknem v koš?` : `Odstranim "${it.name}" s seznama?`)
+      + (used ? `\nV playlisti je ${used}x, tudi tam bo odstranjena.` : '');
+    if (confirm(msg)) run('library.remove', { id: it.id });
+  };
+  li.append(del);
+  li.onclick = () => onItemClick(it.id);
+  libOrder.push(it.id);
+  return li;
+}
+
+function folderRow(rel, name, depth, count, folded) {
+  const li = document.createElement('li');
+  li.className = 'folder' + (rel === currentFolder ? ' sel' : '');
+  li.dataset.rel = rel;
+  li.style.paddingLeft = `${8 + depth * 16}px`;
+  li.append(el('span', 'fold', folded ? '▸' : '▾'), el('span', 'name', `📁 ${name}`), el('span', 'count', String(count)));
+  li.title = 'Klik: zloži / razloži in izberi mapo. Povleci medij sem, da ga premakneš v to mapo.';
+  li.onclick = () => {
+    currentFolder = rel;
+    if (rel) {
+      if (foldedFolders.has(rel)) foldedFolders.delete(rel);
+      else foldedFolders.add(rel);
+      lsSet('foldedFolders', [...foldedFolders]);
+    }
+    renderLibrary();
+  };
+  li.ondragover = (ev) => {
+    if (!(drag && drag.kind === 'media') && !isFileDrag(ev)) return;
+    ev.preventDefault();
+    li.classList.add('dragover');
+  };
+  li.ondragleave = () => li.classList.remove('dragover');
+  li.ondrop = (ev) => {
+    li.classList.remove('dragover');
+    if (drag && drag.kind === 'media') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const it = state.library.find((x) => x.id === drag.id);
+      if (it && !it.rel) showError('Premikati je mogoče samo datoteke iz projektne mape.');
+      else run('library.moveTo', { id: drag.id, folder: rel });
+      drag = null;
+    }
+    // datoteke od zunaj obdela spust na panelu (s to mapo kot ciljem)
+  };
+  return li;
+}
+
+function newFolderRow(depth) {
+  const li = el('li', 'newfolder');
+  li.style.paddingLeft = `${8 + depth * 16}px`;
+  const inp = el('input', 'text-input');
+  inp.placeholder = 'Ime nove mape, Enter';
+  const done = (ok) => {
+    newFolderOpen = false;
+    if (ok && inp.value.trim()) {
+      run('library.newFolder', { parent: currentFolder, name: inp.value.trim() }).then((rel) => {
+        if (rel) currentFolder = rel;
+      });
+    }
+    renderLibrary();
+  };
+  inp.onkeydown = (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') done(true);
+    if (ev.key === 'Escape') done(false);
+  };
+  inp.onblur = () => { if (newFolderOpen) done(!!inp.value.trim()); };
+  li.append(el('span', 'fold', ''), el('span', 'name', '📁'), inp);
+  setTimeout(() => inp.focus(), 0);
+  return li;
+}
+
 function renderLibrary() {
   const ul = $('#library');
   ul.innerHTML = '';
-  const pgmId = state.program && state.program.id;
-  const pvwId = state.preview && state.preview.id;
-  $('#drop-hint').classList.toggle('hidden', state.library.length > 0);
+  libOrder = [];
+  const proj = state.project || { folders: [] };
+  const ctx = { pgmId: state.program && state.program.id, pvwId: state.preview && state.preview.id };
+  $('#drop-hint').classList.toggle('hidden', state.library.length > 0 || !!proj.mediaDir);
   $('#lib-hint').textContent = previewMode()
     ? 'Klik = v preview · puščici gor/dol = prejšnji/naslednji v preview'
     : 'Klik = neposredno na program';
+  for (const b of document.querySelectorAll('#lib-filter button')) b.classList.toggle('on', b.dataset.f === libFilter);
+  $('#lib-sort').value = libSort;
+  $('#btn-new-folder').classList.toggle('hidden', !proj.mediaDir);
 
-  for (const it of state.library) {
-    const li = document.createElement('li');
-    li.dataset.id = it.id;
-    if (!previewMode() && it.id === selectedId) li.classList.add('selected');
-    if (it.id === pgmId) li.classList.add('onair');
-    if (previewMode() && it.id === pvwId) li.classList.add('inpvw');
-    if (it.missing) li.classList.add('missing');
-    li.title = it.missing ? `Datoteka ne obstaja: ${it.path}` : it.path;
-    li.draggable = true;
-    li.ondragstart = (ev) => {
-      drag = { kind: 'media', id: it.id };
-      ev.dataTransfer.effectAllowed = 'copy';
-      ev.dataTransfer.setData('text/plain', it.name);
-    };
-    li.ondragend = () => { drag = null; };
+  // Vrstica z mapo projekta
+  const lf = $('#lib-folder');
+  lf.innerHTML = '';
+  if (proj.folderError) lf.append(el('span', 'bad', proj.folderError));
+  else if (proj.mediaDir) {
+    lf.textContent = `Mapa: ${proj.mediaDir}`;
+    lf.title = proj.mediaDir;
+  } else {
+    lf.append('Projekt nima medijske mape. ');
+    const a = el('a', '', 'Izberi mapo');
+    a.onclick = () => (isDesktop ? run('project.pickFolder') : showError('Mapo lahko izbereš samo na računalniku.'));
+    lf.append(a);
+  }
+  const cp = $('#lib-copying');
+  cp.classList.toggle('hidden', !proj.copying);
+  if (proj.copying) cp.textContent = `Kopiram v projektno mapo: ${proj.copying.name} (${proj.copying.done + 1}/${proj.copying.total}) …`;
 
-    const type = document.createElement('span');
-    type.className = `type ${it.type}`;
-    type.textContent = TYPE_LABEL[it.type] || it.type;
+  const visible = state.library.filter((it) => libFilter === 'all' || it.type === libFilter);
+  if (!proj.mediaDir) {
+    for (const it of sortItems(visible)) ul.append(libItemRow(it, 0, ctx));
+    return;
+  }
+  if (currentFolder && !proj.folders.includes(currentFolder)) currentFolder = '';
 
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = it.name;
-    li.append(type, name);
-
-    if (previewMode() && it.id === pvwId) {
-      const b = document.createElement('span');
-      b.className = 'badge pvw';
-      b.textContent = 'PVW';
-      li.append(b);
+  // Drevo: mape in datoteke po mapah
+  const inFolder = visible.filter((it) => it.rel);
+  const byDir = new Map();
+  for (const it of inFolder) {
+    const d = it.rel.includes('/') ? it.rel.slice(0, it.rel.lastIndexOf('/')) : '';
+    if (!byDir.has(d)) byDir.set(d, []);
+    byDir.get(d).push(it);
+  }
+  const countIn = (rel) => inFolder.filter((it) => it.rel.startsWith(`${rel}/`)).length;
+  const children = (parent) => proj.folders.filter((f) => {
+    const p = f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '';
+    return p === parent;
+  });
+  const rootName = proj.mediaDir.split(/[\\/]/).filter(Boolean).pop() || proj.mediaDir;
+  const root = folderRow('', rootName, 0, inFolder.length, false);
+  root.querySelector('.fold').textContent = '';
+  ul.append(root);
+  const walk = (parent, depth) => {
+    if (newFolderOpen && parent === currentFolder) ul.append(newFolderRow(depth));
+    for (const f of children(parent)) {
+      const n = countIn(f);
+      if (libFilter !== 'all' && !n) continue;
+      const folded = foldedFolders.has(f);
+      ul.append(folderRow(f, f.slice(f.lastIndexOf('/') + 1), depth, n, folded));
+      if (!folded) walk(f, depth + 1);
     }
-    if (it.id === pgmId) {
-      const b = document.createElement('span');
-      b.className = 'badge pgm';
-      b.textContent = 'PGM';
-      li.append(b);
-    }
-
-    if (it.type !== 'image') {
-      const loop = document.createElement('button');
-      loop.className = 'item-btn' + (it.loop ? ' active' : '');
-      loop.textContent = 'LOOP';
-      loop.title = 'Ponavljaj v zanki (velja ob naslednjem nalaganju)';
-      loop.onclick = (ev) => {
-        ev.stopPropagation();
-        run('library.loop', { id: it.id, loop: !it.loop });
-      };
-      li.append(loop);
-    }
-
-    const plus = document.createElement('button');
-    plus.className = 'item-btn';
-    plus.textContent = '+';
-    const tg = targetGroup();
-    plus.title = tg ? `Dodaj v skupino "${tg.name}"` : 'Dodaj v playlist';
-    plus.onclick = (ev) => {
-      ev.stopPropagation();
-      const g = targetGroup();
-      if (g) run('playlist.add', { groupId: g.id, mediaIds: [it.id] });
-    };
-    li.append(plus);
-
-    const del = document.createElement('button');
-    del.className = 'item-btn';
-    del.textContent = '✕';
-    del.title = 'Odstrani s seznama medijev in iz playliste (datoteka ostane na disku)';
-    del.onclick = (ev) => {
-      ev.stopPropagation();
-      if (it.id === pgmId || it.id === pvwId) {
-        showError('Posnetek je na programu ali v preview. Najprej ga počisti.');
-        return;
-      }
-      run('library.remove', { id: it.id });
-    };
-    li.append(del);
-
-    li.onclick = () => onItemClick(it.id);
+    for (const it of sortItems(byDir.get(parent) || [])) ul.append(libItemRow(it, depth, ctx));
+  };
+  walk('', 1);
+  const outside = visible.filter((it) => !it.rel);
+  if (outside.length) {
+    const li = el('li', 'folder');
+    li.append(el('span', 'fold', ''), el('span', 'name', '↗ Zunaj projektne mape'), el('span', 'count', String(outside.length)));
+    li.title = 'Datoteke, ki niso v projektni mapi (dodane pred izbiro mape). Povleci jih v mapo v Raziskovalcu ali jih dodaj znova.';
     ul.append(li);
+    for (const it of sortItems(outside)) ul.append(libItemRow(it, 1, ctx));
   }
 }
 
@@ -689,6 +812,7 @@ function fillTakeControls() {
 function render() {
   if (!state) return;
   renderEngine();
+  renderProject();
   renderLibrary();
   renderPlaylist();
   renderPanic();
@@ -698,6 +822,82 @@ function render() {
   if (state.lastError && state.lastError !== render.lastError) showError(state.lastError);
   render.lastError = state.lastError;
 }
+
+// ---------- projekti ----------
+
+function renderProject() {
+  const p = state.project;
+  if (!p) return;
+  $('#project-name').textContent = p.name;
+  // Opozorilo, ko naprava za akcije ni povezana
+  const down = ((state.actions && state.actions.devices) || []).filter((d) => d.host && !d.connected);
+  const w = $('#dev-warn');
+  w.classList.toggle('hidden', !down.length);
+  if (down.length) {
+    w.textContent = `⚠ ${down.length === 1 ? `${down[0].name} ni povezan` : `${down.length} naprave niso povezane`}`;
+    w.title = `Ni povezave: ${down.map((d) => `${d.name} (${d.host})`).join(', ')}. Klikni za Akcije.`;
+  }
+  if ($('#dlg-project').open) fillProjectDialog();
+}
+
+function fillProjectDialog() {
+  const p = state.project;
+  const ul = $('#project-list');
+  ul.innerHTML = '';
+  for (const pr of p.list) {
+    const li = el('li', pr.id === p.id ? 'current' : '');
+    li.append(el('span', 'name', pr.name));
+    if (pr.id === p.id) li.append(el('span', 'badge info', 'odprt'));
+    else {
+      const open = el('button', 'btn small', 'Odpri');
+      open.type = 'button';
+      open.onclick = () => {
+        if (state.program && !state.panic && !confirm(`Na programu je "${state.program.name}". Ob preklopu projekta se program in preview počistita. Nadaljujem?`)) return;
+        run('project.switch', { id: pr.id });
+      };
+      const del = el('button', 'btn ghost small', '✕');
+      del.type = 'button';
+      del.title = 'Izbriši projekt (mediji v mapi ostanejo)';
+      del.onclick = () => {
+        if (confirm(`Izbrišem projekt "${pr.name}"? Playlista in nastavitve se izbrišejo, datoteke v medijski mapi ostanejo.`)) run('project.remove', { id: pr.id });
+      };
+      li.append(open, del);
+    }
+    ul.append(li);
+  }
+  if (document.activeElement !== $('#project-rename')) $('#project-rename').value = p.name;
+  $('#project-dir').textContent = p.mediaDir || 'ni izbrana';
+  for (const id of ['#btn-project-dir', '#btn-project-export', '#btn-project-import']) $(id).disabled = !isDesktop;
+}
+
+$('#btn-project').onclick = () => {
+  fillProjectDialog();
+  $('#dlg-project').showModal();
+};
+$('#dev-warn').onclick = () => $('#btn-actions').click();
+$('#btn-project-new').onclick = async () => {
+  const name = $('#new-project-name').value.trim();
+  if (!name) {
+    showError('Vpiši ime novega projekta.');
+    return;
+  }
+  if (state.program && !state.panic && !confirm(`Na programu je "${state.program.name}". Ob preklopu projekta se program in preview počistita. Nadaljujem?`)) return;
+  const id = await run('project.create', { name });
+  $('#new-project-name').value = '';
+  if (id && isDesktop) run('project.pickFolder');
+};
+$('#project-rename').onchange = (e) => run('project.rename', { id: state.project.id, name: e.target.value });
+$('#btn-project-dir').onclick = () => run('project.pickFolder');
+$('#btn-project-export').onclick = async () => {
+  const f = await run('project.export');
+  if (f) showError(`Projekt izvožen: ${f}`);
+};
+$('#btn-project-import').onclick = async () => {
+  if (state.program && !state.panic && !confirm(`Na programu je "${state.program.name}". Ob uvozu se program in preview počistita. Nadaljujem?`)) return;
+  const r = await run('project.import');
+  if (r && r.missing) showError(`Projekt uvožen. Manjka ${r.missing} datotek (označene rdeče).`);
+};
+for (const id of ['#new-project-name', '#project-rename']) $(id).addEventListener('keydown', (ev) => ev.stopPropagation());
 
 // ---------- ukazi ----------
 
@@ -729,7 +929,7 @@ function stepPreview(dir) {
       return;
     }
   }
-  const items = state.library;
+  const items = libOrder.map((id) => state.library.find((x) => x.id === id)).filter(Boolean);
   if (!items.length) return;
   const cur = previewMode() ? state.preview && state.preview.id : selectedId;
   let i = items.findIndex((x) => x.id === cur);
@@ -867,7 +1067,26 @@ $('#btn-add').onclick = () => {
     showError('Medije lahko dodajaš samo na računalniku.');
     return;
   }
-  run('library.pickFiles');
+  run('library.pickFiles', { folder: currentFolder });
+};
+
+// Filter, razvrščanje, nova mapa
+for (const b of document.querySelectorAll('#lib-filter button')) {
+  b.onclick = () => {
+    libFilter = b.dataset.f;
+    lsSet('libFilter', libFilter);
+    renderLibrary();
+  };
+}
+$('#lib-sort').onchange = (e) => {
+  libSort = e.target.value;
+  lsSet('libSort', libSort);
+  renderLibrary();
+};
+$('#btn-new-folder').onclick = () => {
+  newFolderOpen = true;
+  if (currentFolder) foldedFolders.delete(currentFolder);
+  renderLibrary();
 };
 
 // Po kliku na stikalo ali izbiro fokus ne sme ostati tam, sicer bi preslednica (AUTO) preklopila stikalo.
@@ -916,7 +1135,9 @@ libPanel.addEventListener('drop', (ev) => {
   libPanel.classList.remove('dragover');
   if (!isDesktop) return;
   const paths = [...ev.dataTransfer.files].map((f) => window.playoutDesktop.pathForFile(f)).filter(Boolean);
-  if (paths.length) run('library.addPaths', { paths });
+  const row = ev.target && ev.target.closest && ev.target.closest('li.folder[data-rel]');
+  const folder = row ? row.dataset.rel : currentFolder;
+  if (paths.length) run('library.addPaths', { paths, folder });
 });
 
 // ---------- nastavitve ----------
