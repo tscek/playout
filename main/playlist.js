@@ -29,6 +29,9 @@ function normEntry(e) {
     seconds: optSeconds(e.seconds, 1), // trajanje slike; null = kot skupina
     inSec: optSeconds(e.inSec),
     outSec: optSeconds(e.outSec),
+    startAction: typeof e.startAction === 'string' && e.startAction ? e.startAction : null, // akcija ob začetku
+    endAction: typeof e.endAction === 'string' && e.endAction ? e.endAction : null, // akcija ob koncu
+    endLead: Math.max(0, Math.min(30, optSeconds(e.endLead) || 0)), // koliko sekund pred koncem
   };
 }
 
@@ -126,6 +129,9 @@ class Playlist {
     if ('seconds' in patch) e.seconds = optSeconds(patch.seconds, 1);
     if ('inSec' in patch) e.inSec = optSeconds(patch.inSec);
     if ('outSec' in patch) e.outSec = optSeconds(patch.outSec);
+    if ('startAction' in patch) e.startAction = typeof patch.startAction === 'string' && patch.startAction ? patch.startAction : null;
+    if ('endAction' in patch) e.endAction = typeof patch.endAction === 'string' && patch.endAction ? patch.endAction : null;
+    if ('endLead' in patch) e.endLead = Math.max(0, Math.min(30, optSeconds(patch.endLead) || 0));
     if (e.inSec !== null && e.outSec !== null && e.outSec <= e.inSec) e.outSec = null;
     return e;
   }

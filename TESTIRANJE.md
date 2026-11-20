@@ -1,6 +1,25 @@
-# Test v0.4.0: playlist po vnosih, IN/OUT, trajanje slik
+# Test v0.5.0: akcije (ATEM, XR18), playlist po vnosih, IN/OUT
 
 Namesti novo verzijo čez staro. Nastavitve in seznam medijev ostanejo.
+
+## 0. Akcije (novo v 0.5.0)
+
+1. Zgoraj klikni **Akcije**.
+2. Pri **Naprave** klikni **+ ATEM** in vpiši IP naslov ATEM-a. Ko se poveže, zasveti zelena pika in piše model.
+   Enako za **+ XR18 mešalna miza** (IP naslov mize).
+3. Klikni **+ Akcija**, jo poimenuj (npr. "Nazaj na kamero 1") in dodaj korake:
+   - ATEM: *AUTO na vhod* ali *CUT na vhod* (izbereš vhod po imenu), *AUX izhod na vhod*, makro, fade to black.
+   - XR18: utišaj ali vklopi kanal, bus, glavni LR, DCA; mute skupine 1 do 4; fader na vrednost v dB.
+   - HTTP ali OSC ukaz za druge naprave, *Počakaj* za premor med koraki.
+4. **▶ Preizkusi** jo takoj izvede. Če kaj ne uspe, se izpiše zakaj.
+5. Akcije z obkljukanim *gumb zgoraj* so gumbi pod zgornjo vrstico za ročni zagon.
+6. Pripni jo na vnos v playlisti: gumb **⚙** pri vnosu, *Akcija ob začetku* (ko gre vnos na program)
+   ali *Akcija ob koncu* (ko se video konča ali doseže OUT). Pri koncu lahko nastaviš, koliko sekund prej se sproži,
+   da je npr. ATEM prehod končan točno ob koncu videa.
+   Akcija ob koncu se ne sproži, če vnos prej zamenjaš sam.
+
+Preveri na ATEM-u: ali preklop pride ob pravem trenutku in ali AUX preklopi pravilno.
+Preveri na XR18: ali se kanali in skupine utišajo in ali fader pride na pravo vrednost.
 
 ## A. Playlist in skupine
 

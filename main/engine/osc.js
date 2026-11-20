@@ -90,4 +90,23 @@ class OscListener extends EventEmitter {
   }
 }
 
-module.exports = { OscListener, parsePacket };
+/** Sestavi OSC sporočilo. args: števila (cela -> i, sicer f), nizi (s) ali { type, value }. */
+function encodeMessage(address, args = []) {
+  const pad = (b) => Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4 || 0)]);
+  const str = (s) => {
+    const b = Buffer.from(String(s) + '\0', 'utf8');
+    return Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4)]);
+  };
+  let tags = ',';
+  const parts = [];
+  for (const a of args) {
+    const { type, value } = typeof a === 'object' && a !== null ? a : { type: typeof a === 'string' ? 's' : Number.isInteger(a) ? 'i' : 'f', value: a };
+    tags += type;
+    if (type === 'i') { const b = Buffer.alloc(4); b.writeInt32BE(Math.round(value)); parts.push(b); }
+    else if (type === 'f') { const b = Buffer.alloc(4); b.writeFloatBE(Number(value)); parts.push(b); }
+    else if (type === 's') parts.push(str(value));
+  }
+  return pad(Buffer.concat([str(address), str(tags), ...parts]));
+}
+
+module.exports = { encodeMessage, OscListener, parsePacket };

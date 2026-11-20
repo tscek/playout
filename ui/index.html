@@ -17,9 +17,12 @@
       <input type="checkbox" id="mode-preview">
       <span>Preview</span>
     </label>
+    <button id="btn-actions" class="btn ghost">Akcije</button>
     <button id="btn-log" class="btn ghost">Dnevnik</button>
     <button id="btn-settings" class="btn ghost">Nastavitve</button>
   </header>
+
+  <div id="action-bar" class="action-bar hidden"></div>
 
   <main class="layout">
     <section class="monitors">
@@ -164,6 +167,25 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-actions" class="dialog wide">
+    <form method="dialog">
+      <h2>Akcije</h2>
+      <p class="about">Akcija je zaporedje ukazov za ATEM, mešalno mizo XR18 ali druge naprave (HTTP, OSC).
+        Sprožiš jo z gumbom pod zgornjo vrstico ali jo pripneš na začetek ali konec vnosa v playlisti (gumb ⚙ pri vnosu).</p>
+      <h3>Naprave</h3>
+      <div id="dev-list" class="dev-list"></div>
+      <div class="row-btns">
+        <button type="button" class="btn ghost small" id="btn-add-atem">+ ATEM</button>
+        <button type="button" class="btn ghost small" id="btn-add-xr18">+ XR18 mešalna miza</button>
+      </div>
+      <h3>Akcije</h3>
+      <div id="act-list" class="act-list"></div>
+      <div class="row-btns"><button type="button" class="btn ghost small" id="btn-add-action">+ Akcija</button></div>
+      <div class="dialog-actions"><button value="close" class="btn">Zapri</button></div>
+    </form>
+  </dialog>
+
   <script src="app.js"></script>
+  <script src="actions.js"></script>
 </body>
 </html>

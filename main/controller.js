@@ -57,9 +57,11 @@ class Controller extends EventEmitter {
    * @param {string} o.dataDir
    * @param {() => Promise<object[]>} o.listDisplays
    */
-  constructor({ engine, dataDir, listDisplays, templateDir, monitors = null, osc = null }) {
+  constructor({ engine, dataDir, listDisplays, templateDir, monitors = null, osc = null, actions = null }) {
     super();
     this.monitors = monitors; // { 1: ChannelMonitor, 2: ChannelMonitor }
+    this.actions = actions; // shranjene akcije (ATEM, XR18, HTTP, OSC)
+    if (actions) actions.on('changed', () => this._changed());
     this.osc = osc;
     this.engine = engine;
     this.dataDir = dataDir;
@@ -142,6 +144,7 @@ class Controller extends EventEmitter {
         }),
       })),
       panic: this.panic,
+      actions: this.actions ? this.actions.getState() : { devices: [], actions: [] },
       transitions: TRANSITIONS,
       directions: DIRECTIONS,
       times: this.times,
@@ -201,6 +204,10 @@ class Controller extends EventEmitter {
   }
 
   async init() {
+    if (this.actions && !this._actionsStarted) {
+      this._actionsStarted = true;
+      this.actions.start();
+    }
     if (this.osc && !this.osc.socket) {
       try {
         await this.osc.start();
@@ -658,6 +665,7 @@ class Controller extends EventEmitter {
     this._clearImageTimer();
     const offset = (seekFrames / fpsOf(this.settings.videoMode)) * 1000;
     this.program = { item: { ...item }, startedAt: Date.now() - offset, wallStart: Date.now(), src: src || null };
+    this._armEntryActions();
     this.times[PROGRAM_CHANNEL] = null;
     this.lastError = '';
     this._changed();
@@ -736,6 +744,8 @@ class Controller extends EventEmitter {
   /** Počisti program. withTransition = zatemnitev s trenutnim trajanjem prehoda. */
   async clearProgram(withTransition = false) {
     this._clearImageTimer();
+    clearTimeout(this._endTimer);
+    this._endPending = null;
     this.autoCuedId = null;
     this.program = { item: null, startedAt: 0, src: null };
     this.times[PROGRAM_CHANNEL] = null;
@@ -753,6 +763,62 @@ class Controller extends EventEmitter {
         await this._cue();
       } catch { /* ni kritično */ }
     }
+  }
+
+  // ---------- akcije ob vnosih ----------
+
+  /** Ko gre vnos na program: akcija ob začetku takoj, akcija ob koncu se pripravi. */
+  _armEntryActions() {
+    clearTimeout(this._endTimer);
+    this._endPending = null;
+    const p = this.program;
+    if (!this.actions || !p.item || !p.src) return;
+    const f = this.playlist.findEntry(p.src.entryId);
+    if (!f) return;
+    const e = f.entry;
+    if (e.startAction) this._runAction(e.startAction, `začetek: ${p.item.name}`);
+    if (!e.endAction) return;
+    const spec = this._spec(p.item, p.src);
+    if (spec.loop) return; // zanka se ne konča
+    this._endPending = { entryId: e.id, actionId: e.endAction, lead: e.endLead || 0 };
+    if (p.item.type === 'image') {
+      if (!spec.seconds) return;
+      const wait = Math.max(0, (spec.seconds - (e.endLead || 0)) * 1000);
+      this._endTimer = setTimeout(() => this._fireEndAction(), wait);
+    }
+  }
+
+  _checkEndAction() {
+    const pend = this._endPending;
+    const p = this.program;
+    if (!p.item || !p.src || p.src.entryId !== pend.entryId) return;
+    const t = this.times[PROGRAM_CHANNEL];
+    if (!t || !t.total) return;
+    const spec = this._spec(p.item, p.src);
+    const end = spec.outSec || t.total;
+    if (t.elapsed >= end - pend.lead - 1 / fpsOf(this.settings.videoMode)) this._fireEndAction();
+  }
+
+  _fireEndAction() {
+    const pend = this._endPending;
+    if (!pend) return;
+    this._endPending = null;
+    clearTimeout(this._endTimer);
+    this._runAction(pend.actionId, `konec: ${this.program.item ? this.program.item.name : ''}`);
+  }
+
+  _runAction(id, why) {
+    if (!this.actions) return;
+    this.actions.run(id, why).catch((e) => {
+      this.lastError = e.message;
+      this._changed();
+    });
+  }
+
+  /** Ročni zagon akcije (gumb). */
+  async runAction(id) {
+    if (!this.actions) this._error('Akcije niso na voljo');
+    await this.actions.run(id, 'gumb');
   }
 
   // ---------- zvok in premikanje po posnetku ----------
@@ -893,6 +959,7 @@ class Controller extends EventEmitter {
       this._autoAdvanced();
     }
     this.times[ch] = { elapsed, total: typeof total === 'number' ? total : 0 };
+    if (ch === PROGRAM_CHANNEL && this._endPending) this._checkEndAction();
     const now = Date.now();
     if (now - this._timeEmitAt > 200) {
       this._timeEmitAt = now;

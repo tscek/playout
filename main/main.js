@@ -7,6 +7,7 @@ const { app, BrowserWindow, dialog, ipcMain, session, shell, screen } = require(
 const { Engine } = require('./engine/engine');
 const { listDisplays } = require('./engine/displays');
 const { Controller } = require('./controller');
+const { ActionManager } = require('./actions');
 const { ChannelMonitor } = require('./engine/monitor');
 const { OscListener } = require('./engine/osc');
 const { createServer } = require('./server');
@@ -117,6 +118,7 @@ app.whenReady().then(async () => {
     monitors: { 1: new ChannelMonitor(1), 2: new ChannelMonitor(2) },
     osc: new OscListener(0),
     templateDir: path.join(engineDir, 'templates'),
+    actions: new ActionManager({ file: path.join(dataDir, 'actions.json'), log: (l) => engine._log(l) }),
   });
 
   const extraActions = {
@@ -169,8 +171,7 @@ let engineStopped = false;
 app.on('will-quit', (e) => {
   if (engineStopped || !controller) return;
   e.preventDefault();
-  controller.engine
-    .stop()
+  Promise.all([controller.engine.stop(), controller.actions ? controller.actions.stop() : null])
     .catch(() => {})
     .finally(() => {
       engineStopped = true;

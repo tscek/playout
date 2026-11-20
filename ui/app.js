@@ -426,6 +426,38 @@ function entryEditor(e, g) {
   endL.append(document.createTextNode('Na koncu'), sel);
   box.append(endL);
 
+  // Akcije ob začetku in koncu vnosa
+  const acts = (state.actions && state.actions.actions) || [];
+  const actSel = (value) => {
+    const sel = el('select', 'mini-select');
+    sel.add(new Option('—', ''));
+    for (const a of acts) sel.add(new Option(a.name, a.id));
+    if (value && !acts.some((a) => a.id === value)) sel.add(new Option('(izbrisana akcija)', value));
+    sel.value = value || '';
+    return sel;
+  };
+  const startL = el('label', 'group-opt');
+  const startSel = actSel(e.startAction);
+  startSel.onchange = () => set({ startAction: startSel.value || null });
+  startL.title = 'Akcija, ki se sproži, ko gre vnos na program';
+  startL.append(document.createTextNode('Akcija ob začetku'), startSel);
+  const endActL = el('label', 'group-opt');
+  endActL.title = 'Akcija, ki se sproži, ko se posnetek konča (ali toliko sekund prej). Ne sproži se, če ga prej zamenjaš sam.';
+  const endActSel = actSel(e.endAction);
+  endActSel.onchange = () => set({ endAction: endActSel.value || null });
+  const lead = el('input');
+  lead.type = 'number';
+  lead.min = 0;
+  lead.max = 30;
+  lead.step = 0.5;
+  lead.value = e.endLead || 0;
+  lead.onchange = () => set({ endLead: parseFloat(lead.value) || 0 });
+  lead.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === 'Escape') lead.blur(); };
+  lead.onblur = () => setTimeout(render, 0);
+  endActL.append(document.createTextNode('Akcija ob koncu'), endActSel, lead, document.createTextNode('s prej'));
+  box.append(startL, endActL);
+  if (!acts.length) box.append(el('span', 'hint-inline', 'Akcije pripraviš z gumbom "Akcije" zgoraj.'));
+
   if (e.type === 'image') {
     const l = el('label', 'group-opt');
     const n = el('input');
@@ -587,6 +619,7 @@ function render() {
   renderPanic();
   renderMonitors();
   fillTakeControls();
+  if (typeof renderActions === 'function') renderActions();
   if (state.lastError && state.lastError !== render.lastError) showError(state.lastError);
   render.lastError = state.lastError;
 }

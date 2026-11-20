@@ -268,6 +268,7 @@ test('playlist: samodejno nadaljevanje (video z AUTO, zaznava prek OSC, slika po
     await waitFor(() => ctl.preview.item && ctl.preview.item.id === ic.id);
     // Za videom pride slika: tudi ta gre v ozadje z AUTO.
     await waitFor(() => sent.some((x) => /^LOADBG 1-10 ".*c\.png" MIX 12 LINEAR AUTO$/.test(x)));
+    await waitFor(() => ctl.getState().preview.autoFollow === 'end');
 
     ctl._onOsc({ address: '/channel/1/stage/layer/10/foreground/file/path', args: [c] });
     assert.strictEqual(ctl.program.item.id, ic.id);
@@ -387,5 +388,97 @@ test('vnos: lastna nastavitev konca, IN/OUT točki, trajanje slike', async () =>
     assert.strictEqual(ia.outSec, null);
   } finally {
     await engine.stop();
+  }
+});
+
+test('akcije: XR18 OSC, HTTP, splošen OSC, sprožitev ob začetku in koncu vnosa', async () => {
+  const dgram = require('dgram');
+  const http = require('http');
+  const { ActionManager } = require('../main/actions');
+  const { dbToFader } = require('../main/devices/xr18');
+  const { parsePacket } = require('../main/engine/osc');
+  assert.strictEqual(dbToFader(0), 0.75);
+  assert.strictEqual(dbToFader(-90), 0);
+
+  // Lažna XR18 na lokalnih vratih: sprejme in odgovori na /xinfo.
+  const got = [];
+  const udp = dgram.createSocket('udp4');
+  await new Promise((r) => udp.bind(0, '127.0.0.1', r));
+  udp.on('message', (buf, rinfo) => {
+    for (const m of parsePacket(buf)) {
+      got.push(m);
+      if (m.address === '/xinfo') {
+        const { encodeMessage } = require('../main/engine/osc');
+        udp.send(encodeMessage('/xinfo', ['127.0.0.1', 'XR18-test', 'XR18', '1.18']), rinfo.port, rinfo.address);
+      }
+    }
+  });
+  const hits = [];
+  const srv = http.createServer((req, res) => { hits.push(req.method + ' ' + req.url); res.end('ok'); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+
+  const { ctl, engine, dir } = makeController();
+  const am = new ActionManager({ file: path.join(dir, 'actions.json') });
+  ctl.actions = am;
+  am.on('changed', () => ctl._changed());
+  // Testna "XR18" posluša na drugih vratih kot 10024, zato vrata podtaknemo.
+  const xr = require('../main/devices/xr18');
+  const origRun = xr.Xr18Device.prototype._send;
+  xr.Xr18Device.prototype._send = function (address, args) {
+    this.socket.send(require('../main/engine/osc').encodeMessage(address, args), udp.address().port, '127.0.0.1');
+  };
+  try {
+    const devId = await am.saveDevice({ type: 'xr18', name: 'Miza', host: '127.0.0.1' });
+    await waitFor(() => am.getState().devices[0].connected, 5000);
+    const a1 = am.saveAction({ name: 'Utišaj', steps: [
+      { type: 'xr18', deviceId: devId, cmd: 'mute', target: 'ch', num: 3 },
+      { type: 'xr18', deviceId: devId, cmd: 'fader', target: 'lr', db: 0 },
+      { type: 'xr18', deviceId: devId, cmd: 'mutegroup', group: 2 },
+    ] });
+    const a2 = am.saveAction({ name: 'Splet', steps: [
+      { type: 'http', url: `http://127.0.0.1:${srv.address().port}/go?x=1`, method: 'POST', body: '{"a":1}' },
+      { type: 'wait', ms: 10 },
+      { type: 'osc', host: '127.0.0.1', port: udp.address().port, address: '/test/x', args: '1 0.5 hej' },
+    ] });
+    await am.run(a1);
+    await waitFor(() => got.some((m) => m.address === '/config/mute/2'));
+    assert.deepStrictEqual(got.find((m) => m.address === '/ch/03/mix/on').args, [0]);
+    assert.deepStrictEqual(got.find((m) => m.address === '/lr/mix/fader').args, [0.75]);
+    await am.run(a2);
+    await waitFor(() => got.some((m) => m.address === '/test/x'));
+    assert.deepStrictEqual(hits, ['POST /go?x=1']);
+    assert.deepStrictEqual(got.find((m) => m.address === '/test/x').args, [1, 0.5, 'hej']);
+
+    // Sprožitev ob vnosu
+    const v = path.join(dir, 'v.mp4');
+    fs.writeFileSync(v, 'x');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([v]);
+    const g = ctl.playlist.groups[0];
+    await ctl.addToGroup(g.id, [ctl.library.items[0].id]);
+    const e = g.items[0];
+    await ctl.setEntry(e.id, { startAction: a2, endAction: a1, endLead: 1 });
+    hits.length = 0;
+    got.length = 0;
+    await ctl.loadPreview(e.mediaId, e.id);
+    await ctl.take('cut');
+    await waitFor(() => hits.length === 1);
+    ctl._onOsc({ address: '/channel/1/stage/layer/10/foreground/file/time', args: [5, 10] });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.ok(!got.some((m) => m.address === '/ch/03/mix/on'));
+    ctl._onOsc({ address: '/channel/1/stage/layer/10/foreground/file/time', args: [9.02, 10] });
+    await waitFor(() => got.some((m) => m.address === '/ch/03/mix/on'));
+    got.length = 0;
+    ctl._onOsc({ address: '/channel/1/stage/layer/10/foreground/file/time', args: [9.5, 10] });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.ok(!got.some((m) => m.address === '/ch/03/mix/on')); // samo enkrat
+  } finally {
+    xr.Xr18Device.prototype._send = origRun;
+    await am.stop();
+    await engine.stop();
+    udp.close();
+    srv.closeAllConnections();
+    srv.close();
   }
 });
