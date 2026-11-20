@@ -1,0 +1,112 @@
+'use strict';
+// Sestavi casparcg.config iz nastavitev aplikacije.
+//
+// Kanal 1 = PROGRAM (to gre na izhode).
+// Kasneje: kanal 2 = PREVIEW (samo za monitor v vmesniku).
+
+const VIDEO_MODES = {
+  '1080p5000': '1080p 50',
+  '1080p2500': '1080p 25',
+  '1080i5000': '1080i 50',
+  '1080p3000': '1080p 30',
+  '1080p2997': '1080p 29,97',
+  '1080p6000': '1080p 60',
+  '1080p5994': '1080p 59,94',
+};
+
+function xmlEscape(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function p(path) {
+  // CasparCG pričakuje poti s poševnico na koncu.
+  let s = String(path).replace(/\\/g, '/');
+  if (!s.endsWith('/')) s += '/';
+  return xmlEscape(s);
+}
+
+/**
+ * Screen izhod. Zaslon je vedno "borderless" okno točno čez cel izbran
+ * zaslon (to je zanesljivejše od pravega celozaslonskega načina, ki v
+ * knjižnici SFML deluje le na glavnem zaslonu).
+ */
+function screenConsumer({ display, keyOnly = false, name, windowedTest = false }) {
+  const lines = ['<screen>'];
+  if (windowedTest) {
+    // Testni način: navadno okno na glavnem zaslonu, 960×540.
+    lines.push('<device>1</device>', '<windowed>true</windowed>', '<borderless>false</borderless>',
+      '<width>960</width>', '<height>540</height>', '<x>40</x>', '<y>40</y>');
+  } else {
+    lines.push(
+      `<device>${display.index + 1}</device>`,
+      '<windowed>true</windowed>',
+      '<borderless>true</borderless>',
+      '<always-on-top>true</always-on-top>',
+      '<x>0</x>', '<y>0</y>',
+      `<width>${display.width}</width>`, `<height>${display.height}</height>`,
+      '<interactive>false</interactive>'
+    );
+  }
+  lines.push(`<key-only>${keyOnly ? 'true' : 'false'}</key-only>`);
+  lines.push('<stretch>uniform</stretch>');
+  lines.push('<vsync>true</vsync>');
+  if (name) lines.push(`<name>${xmlEscape(name)}</name>`);
+  lines.push('</screen>');
+  return lines.join('\n                    ');
+}
+
+/**
+ * @param {object} o
+ * @param {string} o.videoMode
+ * @param {object[]} o.screens  [{display, keyOnly, name, windowedTest}]
+ * @param {string|null} o.audioDevice  ime naprave ali null za privzeto; false = brez zvoka
+ * @param {object} o.paths {media, log, data, template, htmlCache}
+ * @param {number} o.amcpPort
+ */
+function buildConfig(o) {
+  const consumers = [];
+  for (const s of o.screens) consumers.push(screenConsumer(s));
+  if (o.audioDevice !== false) {
+    if (o.audioDevice) {
+      consumers.push(`<system-audio>\n                        <device-name>${xmlEscape(o.audioDevice)}</device-name>\n                    </system-audio>`);
+    } else {
+      consumers.push('<system-audio />');
+    }
+  }
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!-- To datoteko ustvari aplikacija Playout ob vsakem zagonu motorja. Ročne spremembe se prepišejo. -->
+<configuration>
+    <paths>
+        <media-path>${p(o.paths.media)}</media-path>
+        <log-path>${p(o.paths.log)}</log-path>
+        <data-path>${p(o.paths.data)}</data-path>
+        <template-path>${p(o.paths.template)}</template-path>
+    </paths>
+    <log-level>info</log-level>
+    <channels>
+        <channel>
+            <video-mode>${xmlEscape(o.videoMode)}</video-mode>
+            <consumers>
+                    ${consumers.join('\n                    ')}
+            </consumers>
+        </channel>
+    </channels>
+    <controllers>
+        <tcp>
+            <port>${o.amcpPort}</port>
+            <protocol>AMCP</protocol>
+        </tcp>
+    </controllers>
+    <html>
+        <cache-path>${p(o.paths.htmlCache)}</cache-path>
+    </html>
+</configuration>
+`;
+}
+
+module.exports = { buildConfig, VIDEO_MODES };

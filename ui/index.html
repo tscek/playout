@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playout</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Playout</div>
+    <div id="engine-pill" class="pill pill-wait" title="Stanje motorja">Motor: povezujem …</div>
+    <div id="conn-banner" class="conn-banner hidden">Povezava z aplikacijo prekinjena, ponovno povezujem …</div>
+    <div class="spacer"></div>
+    <button id="btn-log" class="btn ghost">Dnevnik</button>
+    <button id="btn-settings" class="btn ghost">Nastavitve</button>
+  </header>
+
+  <main class="layout">
+    <section class="panel library">
+      <div class="panel-head">
+        <h2>Mediji</h2>
+        <div class="spacer"></div>
+        <button id="btn-add" class="btn">+ Dodaj medije</button>
+      </div>
+      <div id="drop-hint" class="drop-hint">Povleci datoteke sem ali klikni "Dodaj medije".</div>
+      <ul id="library" class="library-list"></ul>
+    </section>
+
+    <section class="panel program">
+      <div class="panel-head"><h2>Program</h2></div>
+      <div class="onair">
+        <div class="onair-label">NA PROGRAMU</div>
+        <div id="onair-name" class="onair-name">—</div>
+        <div id="onair-time" class="onair-time"></div>
+      </div>
+      <div class="actions">
+        <button id="btn-take" class="btn take" disabled>PREDVAJAJ IZBRANO<br><small>(Enter ali dvoklik)</small></button>
+        <button id="btn-clear" class="btn danger">POČISTI PROGRAM<br><small>(Esc)</small></button>
+      </div>
+      <div id="error" class="error hidden"></div>
+      <div class="hint">
+        To je 1. korak: en sloj, izbrani posnetek gre neposredno na program.
+        Preview, prehodi in playlist pridejo v naslednjih korakih.
+      </div>
+    </section>
+  </main>
+
+  <dialog id="dlg-settings" class="dialog">
+    <form method="dialog">
+      <h2>Nastavitve</h2>
+
+      <label class="field">
+        <span>Video format</span>
+        <select id="set-videomode"></select>
+        <small>Naj se ujema s formatom na ATEM-u.</small>
+      </label>
+
+      <label class="field">
+        <span>Izhod PROGRAM</span>
+        <select id="set-output"></select>
+        <small>"Testno okno" odpre manjše okno na glavnem zaslonu, uporabno za preizkus brez drugega zaslona.</small>
+      </label>
+      <button type="button" id="btn-refresh-displays" class="btn ghost small">Osveži seznam zaslonov</button>
+
+      <label class="field">
+        <span>Zvočni izhod</span>
+        <select id="set-audio"></select>
+        <small>Če izbrana naprava ne deluje, motor samodejno preklopi na privzeto.</small>
+      </label>
+
+      <p class="warn">Sprememba nastavitev na kratko ponovno zažene motor (izhod za trenutek ugasne).</p>
+
+      <div class="dialog-actions">
+        <button value="cancel" class="btn ghost">Prekliči</button>
+        <button id="btn-settings-save" value="save" class="btn">Shrani</button>
+      </div>
+      <hr>
+      <div class="about" id="about"></div>
+      <button type="button" id="btn-test-media" class="btn ghost small">Dodaj testne posnetke (sinhronizacija slike in zvoka)</button>
+      <button type="button" id="btn-open-logs" class="btn ghost small">Odpri mapo z dnevniki motorja</button>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-log" class="dialog wide">
+    <form method="dialog">
+      <h2>Dnevnik motorja</h2>
+      <pre id="log" class="log"></pre>
+      <div class="dialog-actions">
+        <button type="button" id="btn-engine-restart" class="btn danger">Ponovno zaženi motor</button>
+        <div class="spacer"></div>
+        <button value="close" class="btn">Zapri</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

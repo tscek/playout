@@ -1,0 +1,71 @@
+{
+  "name": "playout",
+  "productName": "Playout",
+  "version": "0.1.0",
+  "description": "Playout za žive produkcije (upravljanje CasparCG motorja)",
+  "main": "main/main.js",
+  "private": true,
+  "author": "Tomaž",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dev:mock": "node scripts/mock-caspar.js",
+    "test": "node --test test/*.test.js",
+    "fetch-engine": "node scripts/fetch-casparcg.js",
+    "dist": "electron-builder --win nsis --publish never"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^39.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "si.tscek.playout",
+    "productName": "Playout",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main/**",
+      "ui/**",
+      "package.json",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/casparcg",
+        "to": "casparcg",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "assets/test-media",
+        "to": "test-media",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Playout-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Playout"
+    }
+  }
+}

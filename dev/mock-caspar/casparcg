@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+// Navidezni CasparCG za razvoj in teste (ne predvaja ničesar).
+'use strict';
+const fs = require('fs');
+const net = require('net');
+const cfg = fs.readFileSync(process.argv[2], 'utf8');
+const port = parseInt(/<port>(\d+)<\/port>/.exec(cfg)[1], 10);
+const log = (s) => process.stdout.write(`[mock] ${s}\n`);
+if (process.env.MOCK_CRASH_ON_DEVICE && cfg.includes('<device-name>')) {
+  log('Invalid OpenAL device'); process.exit(1);
+}
+const srv = net.createServer((sock) => {
+  let buf = '';
+  sock.on('data', (d) => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\r\n')) !== -1) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 2);
+      log(`AMCP ${line}`);
+      const cmd = line.split(' ')[0].toUpperCase();
+      if (cmd === 'VERSION') sock.write('201 VERSION OK\r\n2.5.1 mock\r\n');
+      else if (cmd === 'INFO') sock.write('200 INFO OK\r\n1 1080p5000 PLAYING\r\n\r\n');
+      else if (cmd === 'CRASH') process.exit(3);
+      else if (cmd === 'BAD') sock.write('400 ERROR\r\n');
+      else sock.write(`202 ${cmd} OK\r\n`);
+    }
+  });
+  sock.on('error', () => {});
+});
+srv.listen(port, '127.0.0.1', () => log(`listening ${port}`));
+process.stdin.on('data', (d) => { if (/^q/m.test(String(d))) { log('quit'); process.exit(0); } });
