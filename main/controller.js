@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS = {
   videoMode: '1080p5000',
   programOutput: 'auto', // 'auto' = prvi zaslon, ki ni glavni; 'test' = okno; sicer ime zaslona (npr. \\.\DISPLAY2)
   audioDevice: '', // '' = privzeta naprava sistema
-  audioDelayFrames: 0, // + = zvok kasneje, - = slika kasneje
+  audioDelayFrames: 0, // zvok kasneje za toliko sličic (zakasnitev slike v CasparCG ne deluje, ko ima zaslon več Hz kot kanal)
 };
 
 function fpsOf(videoMode) {
@@ -129,7 +129,7 @@ class Controller extends EventEmitter {
       videoMode: s.videoMode,
       screens,
       audioDevice: s.audioDevice || null,
-      audioDelayFrames: Number(s.audioDelayFrames) || 0,
+      audioDelayFrames: Math.max(0, Number(s.audioDelayFrames) || 0),
       templateDir: this.templateDir,
     };
   }
@@ -168,7 +168,7 @@ class Controller extends EventEmitter {
     const next = { ...this.settings };
     for (const k of allowed) if (k in patch) next[k] = patch[k];
     if (!VIDEO_MODES[next.videoMode]) this._error('Neznan video način');
-    next.audioDelayFrames = Math.max(-25, Math.min(25, Math.round(Number(next.audioDelayFrames) || 0)));
+    next.audioDelayFrames = Math.max(0, Math.min(25, Math.round(Number(next.audioDelayFrames) || 0)));
     if (next.audioDevice !== this.settings.audioDevice) this.audioWarning = '';
 
     const engineRelevant = allowed.some((k) => next[k] !== this.settings[k]);

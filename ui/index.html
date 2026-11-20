@@ -75,9 +75,9 @@
 
       <label class="field">
         <span>Uskladitev zvoka s sliko (v sličicah)</span>
-        <input type="number" id="set-avdelay" min="-25" max="25" step="1">
-        <small>Če zvok prehiteva sliko, vpiši pozitivno število (npr. 2 = zvok 2 sličici kasneje).
-          Če zvok zaostaja, vpiši negativno. Preveri s testnim posnetkom: blisk in pisk morata biti hkrati.</small>
+        <input type="number" id="set-avdelay" min="0" max="25" step="1">
+        <small>Za koliko sličic naj zvok zamudi (0 do 25). Slika na zaslonu ima vedno nekaj zakasnitve,
+          zato zvok običajno malo prehiteva. Preveri s testnim posnetkom: bel kvadrat in pisk morata biti hkrati.</small>
       </label>
 
       <p class="warn">Sprememba nastavitev na kratko ponovno zažene motor (izhod za trenutek ugasne).</p>
