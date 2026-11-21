@@ -1,0 +1,46 @@
+/* Plošča PTZ (okno aplikacije in tablica). */
+.pz { display: grid; gap: 8px; padding: 8px; margin-bottom: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.pz-head { display: flex; align-items: center; gap: 8px; }
+.pz-model { font-size: 12px; color: var(--muted); }
+.pz-model.bad { color: #ff8a8c; }
+.pz-empty, .pz-none { color: var(--muted); padding: 10px; text-align: center; font-size: 13px; }
+.pz button { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.pz button:active { filter: brightness(1.3); }
+.pz-cams { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.pz-cam { padding: 10px 6px; font-weight: 700; font-size: 13px; position: relative; }
+.pz-cam.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pz-cam.pgm { background: var(--red); border-color: var(--red); color: #fff; }
+.pz-cam.pvw { background: var(--green); border-color: var(--green); color: #fff; }
+.pz-cam.off { opacity: .45; }
+.pz-cam.moving::after { content: '•'; position: absolute; right: 6px; top: 2px; color: var(--amber); }
+.pz-warn { background: rgba(240, 168, 48, .15); border: 1px solid var(--amber); color: var(--amber); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+.pz-warn.hidden { display: none; }
+.pz-ctl { display: flex; gap: 12px; align-items: stretch; }
+.pz-pad { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.pz-pad.joy { width: 200px; height: 200px; flex-shrink: 0;
+  background-image: linear-gradient(var(--line), var(--line)), linear-gradient(var(--line), var(--line));
+  background-size: 1px 100%, 100% 1px; background-position: center; background-repeat: no-repeat; }
+.pz-pad.zoom { width: 56px; flex: 1; min-height: 120px;
+  background-image: linear-gradient(var(--line), var(--line)); background-size: 100% 1px; background-position: center; background-repeat: no-repeat; }
+.pz-pad.on { border-color: var(--accent); cursor: grabbing; }
+.pz-knob { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: var(--accent); opacity: .85; pointer-events: none; }
+.pz-pad.zoom .pz-knob { width: 44px; height: 28px; margin: -14px 0 0 -22px; border-radius: 8px; }
+.pz-zoomwrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pz-zl { font-size: 10px; font-weight: 800; color: var(--muted); letter-spacing: .06em; }
+.pz-side { display: flex; flex-direction: column; gap: 8px; margin-left: auto; }
+.pz-stop { background: #b3262a !important; border-color: #b3262a !important; color: #fff !important; font-weight: 800; letter-spacing: .06em; padding: 18px 16px; flex: 1; }
+.pz-lock { padding: 10px; font-size: 13px; }
+.pz-lock.on { background: var(--amber); border-color: var(--amber); color: #111; font-weight: 700; }
+.pz-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
+.pz-pre { display: flex; align-items: center; gap: 6px; padding: 10px 8px; text-align: left; min-height: 44px; }
+.pz-n { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 16px; }
+.pz-pn { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pz-store summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 4px 0; }
+.pz-storef { display: flex; gap: 6px; margin: 6px 0; }
+.pz-storef input { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px; min-width: 0; }
+.pz-storef input[type=number] { width: 64px; }
+.pz-storef input[type=text] { flex: 1; }
+.pz-save { padding: 6px 12px; }
+.pz-hint { color: var(--muted); font-size: 12px; }
+@media (max-width: 520px) { .pz-pad.joy { width: 160px; height: 160px; } }

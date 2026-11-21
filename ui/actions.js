@@ -20,7 +20,7 @@ const XR_CMDS = {
   unmutegroup: 'Mute skupina izklopi',
 };
 const XR_TARGETS = { ch: 'Kanal', bus: 'Bus (aux izhod)', lr: 'Glavni LR', dca: 'DCA', rtn: 'FX povratek', aux: 'Aux vhod' };
-const STEP_LABEL = { preset: 'Preset', atem: 'ATEM', xr18: 'XR18', http: 'HTTP', osc: 'OSC', wait: 'Počakaj', title: 'Napis' };
+const STEP_LABEL = { preset: 'Preset', atem: 'ATEM', xr18: 'XR18', ptz: 'PTZ', http: 'HTTP', osc: 'OSC', wait: 'Počakaj', title: 'Napis' };
 const presetList = () => (state && state.actions && state.actions.presets) || [];
 function presetName(pid) {
   const p = presetList().find((x) => x.id === pid);
@@ -138,6 +138,23 @@ function field(label, control) {
   return l;
 }
 
+let portsAt = 0;
+/** Seznam COM vrat za izbiro PTZ kontrolerja (osveži se največ vsakih 5 s). */
+function loadPorts() {
+  if (Date.now() - portsAt < 5000) return;
+  portsAt = Date.now();
+  run('ptz.ports').then((list) => {
+    let dl = document.getElementById('ptz-ports');
+    if (!dl) {
+      dl = document.createElement('datalist');
+      dl.id = 'ptz-ports';
+      document.body.append(dl);
+    }
+    dl.innerHTML = '';
+    for (const p of list || []) dl.append(new Option(`${p.esp ? 'ESP32 · ' : ''}${p.name}`, p.path));
+  });
+}
+
 function renderDevices() {
   const box = $('#dev-list');
   box.innerHTML = '';
@@ -148,10 +165,21 @@ function renderDevices() {
     const dot = el('span', 'dot' + (d.connected ? ' ok' : ''));
     dot.title = d.connected ? 'Povezan' : 'Ni povezave';
     const save = (patch) => run('actions.saveDevice', { device: { id: d.id, type: d.type, name: d.name, host: d.host, ...patch } });
-    row.append(dot, el('span', 'type', d.type === 'atem' ? 'ATEM' : 'XR18'),
-      field('Ime', input('text', d.name, (v) => save({ name: v }))),
-      field('IP naslov', input('text', d.host, (v) => save({ host: v }), { placeholder: '192.168.10.240' })),
-      el('span', 'dev-status', d.connected ? `povezan${d.model ? ' · ' + d.model : ''}` : d.host ? 'ni povezave' : 'vpiši IP'));
+    if (d.type === 'ptz') {
+      const port = input('text', d.host, (v) => save({ host: v }), { placeholder: 'samodejno' });
+      port.setAttribute('list', 'ptz-ports');
+      port.title = 'COM vrata kontrolerja (npr. COM5). Prazno = samodejno poišče ESP32 na USB.';
+      loadPorts();
+      row.append(dot, el('span', 'type', 'PTZ'),
+        field('Ime', input('text', d.name, (v) => save({ name: v }))),
+        field('USB (COM)', port),
+        el('span', 'dev-status', d.connected ? `povezan${d.port ? ' · ' + d.port : ''}` : d.error || 'ni povezave'));
+    } else {
+      row.append(dot, el('span', 'type', d.type === 'atem' ? 'ATEM' : 'XR18'),
+        field('Ime', input('text', d.name, (v) => save({ name: v }))),
+        field('IP naslov', input('text', d.host, (v) => save({ host: v }), { placeholder: '192.168.10.240' })),
+        el('span', 'dev-status', d.connected ? `povezan${d.model ? ' · ' + d.model : ''}` : d.host ? 'ni povezave' : 'vpiši IP'));
+    }
     const x = el('button', 'item-btn', '✕');
     x.type = 'button';
     x.title = 'Odstrani napravo';
@@ -390,6 +418,7 @@ $('#btn-actions').onclick = () => {
 };
 $('#btn-add-atem').onclick = () => run('actions.saveDevice', { device: { type: 'atem', name: 'ATEM', host: '' } });
 $('#btn-add-xr18').onclick = () => run('actions.saveDevice', { device: { type: 'xr18', name: 'XR18', host: '' } });
+$('#btn-add-ptz').onclick = () => run('actions.saveDevice', { device: { type: 'ptz', name: 'PTZ', host: '' } });
 $('#btn-add-action').onclick = () => {
   const atem = actState().devices.find((d) => d.type === 'atem');
   const steps = atem ? [{ type: 'atem', deviceId: atem.id, cmd: 'autoTo', input: 1 }] : [];

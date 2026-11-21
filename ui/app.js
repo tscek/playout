@@ -1,5 +1,5 @@
 'use strict';
-/* global playoutDesktop, AtemPanel */
+/* global playoutDesktop, AtemPanel, PtzPanel */
 
 // ---------- povezava z aplikacijo ----------
 
@@ -7,7 +7,7 @@ const api = (() => {
   let ws = null;
   let nextId = 1;
   const waiting = new Map();
-  const listeners = { state: [], log: [], times: [], open: [], close: [], load: [], atem: [] };
+  const listeners = { state: [], log: [], times: [], open: [], close: [], load: [], dev: [] };
 
   function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
@@ -27,7 +27,7 @@ const api = (() => {
         if (msg.ok) w.resolve(msg.data);
         else w.reject(new Error(msg.error));
       } else if (listeners[msg.type]) {
-        const payload = msg.type === 'state' ? msg.state : msg.type === 'times' ? msg.times : msg.type === 'load' ? msg.load : msg.type === 'atem' ? msg : msg.line;
+        const payload = msg.type === 'state' ? msg.state : msg.type === 'times' ? msg.times : msg.type === 'load' ? msg.load : msg.type === 'dev' ? msg : msg.line;
         listeners[msg.type].forEach((f) => f(payload));
       }
     };
@@ -1190,6 +1190,10 @@ function render() {
   if (typeof renderTitles === 'function') renderTitles();
   AtemPanel.render($('#atem-panels'), (state.actions && state.actions.devices) || [],
     (deviceId, step) => run('atem.run', { deviceId, step }));
+  PtzPanel.render($('#ptz-panels'), (state.actions && state.actions.devices) || [], {
+    run: (deviceId, step) => run('device.run', { deviceId, step }),
+    move: (deviceId, cam, pan, tilt, zoom) => api.call('ptz.move', { deviceId, cam, pan, tilt, zoom }).catch(() => {}),
+  });
   renderEntryDialog();
   if (state.lastError && state.lastError !== render.lastError) showError(state.lastError);
   render.lastError = state.lastError;
@@ -1843,7 +1847,10 @@ api.on('times', (t) => {
   times = t;
   renderTimes();
 });
-api.on('atem', (m) => AtemPanel.live(m.id, m.live));
+api.on('dev', (m) => {
+  AtemPanel.live(m.id, m.live);
+  PtzPanel.live(m.id, m.live);
+});
 api.on('log', (line) => {
   if ($('#dlg-log').open) appendLog(line);
 });

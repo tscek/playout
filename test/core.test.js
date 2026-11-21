@@ -1114,3 +1114,58 @@ test('napis na vnosu in velikost napisa', async () => {
     await engine.stop();
   }
 });
+
+test('PTZ kontroler prek USB: povezava, preseti, premik z varnostjo, napake', async () => {
+  const { ActionManager } = require('../main/actions');
+  const { fakePtzIo } = require('./ptz-sim');
+  const io = fakePtzIo();
+  const am = new ActionManager({ file: path.join(tmpDir(), 'actions.json'), deviceIo: io });
+  const id = await am.saveDevice({ type: 'ptz', name: 'PTZ', host: '' });
+  try {
+    await waitFor(() => am.conns.get(id).connected && am.devices[0].cache && am.devices[0].cache.presets && am.devices[0].cache.presets[2]);
+    const dev = am.getState().devices[0];
+    assert.strictEqual(dev.port, 'COM7'); // samodejno najde ESP32 (VID 303a)
+    assert.strictEqual(dev.live.sel, 1);
+    assert.deepStrictEqual(dev.presets[1].map((p) => p.name), ['Govornik', 'Totala', '']);
+    const pids = am.presets().map((p) => p.id);
+    assert.ok(pids.includes(`${id}.recall.1.2`) && pids.includes(`${id}.select.2`) && pids.includes(`${id}.stop`));
+    assert.ok(!pids.some((p) => p.includes('.select.3')), 'izklopljena kamera nima presetov');
+    assert.ok(am.presets().some((p) => p.label === 'JVC: preset 5'));
+    const port = io.ports[0];
+
+    await am.run(`preset:${id}.recall.1.2`);
+    assert.deepStrictEqual(port.received.at(-1), { cmd: 'preset_recall', n: 2, cam: 1, id: port.received.at(-1).id });
+
+    // premik: ponavlja se, dokler ga vmesnik obnavlja; potem sam ustavi
+    am.ptzMove(id, 2, 0.5, 0, 0);
+    await new Promise((r) => setTimeout(r, 200));
+    const moves = port.received.filter((m) => m.cmd === 'move' && m.pan === 0.5);
+    assert.ok(moves.length >= 3, `premik se ponavlja (${moves.length})`);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.deepStrictEqual(port.received.filter((m) => m.cmd === 'move').map((m) => m.pan).at(-1), 0, 'ustavi, ko vmesnik utihne');
+    const n = port.received.length;
+    await new Promise((r) => setTimeout(r, 150));
+    assert.strictEqual(port.received.length, n, 'po ustavitvi nič več ne pošilja');
+
+    // kamera na programu: kontroler zavrne, vmesnik dobi razlog
+    am.ptzMove(id, 1, 0, 0.3, 0);
+    await waitFor(() => am.conns.get(id).moveError.includes('na programu'));
+    am.ptzMove(id, 1, 0, 0, 0);
+
+    await am.deviceRun(id, { cmd: 'lock' });
+    await waitFor(() => am.getState().devices[0].live.lock);
+    await assert.rejects(am.deviceRun(id, { cmd: 'recall', cam: 1, num: 1 }), /zaklep/);
+    await am.deviceRun(id, { cmd: 'unlock' });
+
+    await am.deviceRun(id, { cmd: 'store', cam: 2, num: 7, name: 'Nov kot' });
+    await waitFor(() => am.presets().some((p) => p.id === `${id}.recall.2.7` && p.label === 'AIDA: Nov kot'));
+
+    // izklop kabla: povezava se obnovi sama
+    port.close();
+    await waitFor(() => !am.conns.get(id).connected);
+    await waitFor(() => am.conns.get(id).connected, 6000);
+    assert.strictEqual(io.ports.length, 2);
+  } finally {
+    await am.stop();
+  }
+});

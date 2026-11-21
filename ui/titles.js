@@ -24,12 +24,13 @@ function imageOptions() {
 // ---------- zavihka Mediji / Napisi ----------
 
 function setLeftTab(t) {
-  leftTab = ['titles', 'atem'].includes(t) ? t : 'media';
+  leftTab = ['titles', 'atem', 'ptz'].includes(t) ? t : 'media';
   lsSet('leftTab', leftTab);
   for (const b of document.querySelectorAll('#left-tabs button')) b.classList.toggle('on', b.dataset.t === leftTab);
   $('#tab-media').classList.toggle('hidden', leftTab !== 'media');
   $('#tab-titles').classList.toggle('hidden', leftTab !== 'titles');
   $('#tab-atem').classList.toggle('hidden', leftTab !== 'atem');
+  $('#tab-ptz').classList.toggle('hidden', leftTab !== 'ptz');
   $('#btn-add').classList.toggle('hidden', leftTab !== 'media');
   $('#lib-hint').classList.toggle('hidden', leftTab !== 'media');
   $('#btn-brand').classList.toggle('hidden', leftTab !== 'titles');

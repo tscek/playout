@@ -6,6 +6,7 @@
   <title>Playout</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="atem-panel.css">
+  <link rel="stylesheet" href="ptz-panel.css">
 </head>
 <body>
   <header class="topbar">
@@ -107,7 +108,7 @@
     <section class="bottom">
     <section class="panel library">
       <div class="panel-head">
-        <span class="left-tabs" id="left-tabs"><button data-t="media" class="on">Mediji</button><button data-t="titles">Napisi <span id="titles-onair-count" class="tab-count hidden"></span></button><button data-t="atem">ATEM</button></span>
+        <span class="left-tabs" id="left-tabs"><button data-t="media" class="on">Mediji</button><button data-t="titles">Napisi <span id="titles-onair-count" class="tab-count hidden"></span></button><button data-t="atem">ATEM</button><button data-t="ptz">PTZ</button></span>
         <span class="hint-inline" id="lib-hint"></span>
         <div class="spacer"></div>
         <button id="btn-add" class="btn">+ Dodaj medije</button>
@@ -146,6 +147,7 @@
         <div id="title-edit" class="title-edit hidden"></div>
       </div>
       <div class="tab-pane hidden" id="tab-atem"><div id="atem-panels" class="atem-panels"></div></div>
+      <div class="tab-pane hidden" id="tab-ptz"><div id="ptz-panels" class="atem-panels"></div></div>
     </section>
 
     <section class="panel playlist" id="playlist-panel">
@@ -432,6 +434,7 @@
       <div class="row-btns">
         <button type="button" class="btn ghost small" id="btn-add-atem">+ ATEM</button>
         <button type="button" class="btn ghost small" id="btn-add-xr18">+ XR18 mešalna miza</button>
+        <button type="button" class="btn ghost small" id="btn-add-ptz">+ PTZ kontroler (USB)</button>
       </div>
       <h3>Preseti iz naprav</h3>
       <p class="about">Pripravljeni ukazi z imeni iz ATEM in XR18 (če kamero preimenuješ v napravi, se ime spremeni tudi tu).
@@ -445,6 +448,7 @@
   </dialog>
 
   <script src="atem-panel.js"></script>
+  <script src="ptz-panel.js"></script>
   <script src="app.js"></script>
   <script src="actions.js"></script>
   <script src="titles.js"></script>

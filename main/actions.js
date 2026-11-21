@@ -9,10 +9,11 @@ const { newId } = require('./media');
 const { encodeMessage } = require('./engine/osc');
 const { AtemDevice } = require('./devices/atem');
 const { Xr18Device } = require('./devices/xr18');
+const { PtzDevice } = require('./devices/ptz');
 const { buildPresets, presetStep, cacheFromInfo } = require('./presets');
 
-const DEVICE_TYPES = { atem: AtemDevice, xr18: Xr18Device };
-const STEP_TYPES = ['atem', 'xr18', 'http', 'osc', 'wait', 'title', 'preset'];
+const DEVICE_TYPES = { atem: AtemDevice, xr18: Xr18Device, ptz: PtzDevice };
+const STEP_TYPES = ['atem', 'xr18', 'ptz', 'http', 'osc', 'wait', 'title', 'preset'];
 
 function cleanStr(v, max = 200) {
   return typeof v === 'string' ? v.trim().slice(0, max) : '';
@@ -28,10 +29,10 @@ function normDevice(d) {
 function normStep(s) {
   const type = STEP_TYPES.includes(s.type) ? s.type : 'wait';
   const out = { type };
-  for (const k of ['deviceId', 'cmd', 'target', 'url', 'method', 'body', 'host', 'address', 'args']) {
+  for (const k of ['deviceId', 'cmd', 'target', 'url', 'method', 'body', 'host', 'address', 'args', 'name']) {
     if (typeof s[k] === 'string') out[k] = s[k].slice(0, 2000);
   }
-  for (const k of ['input', 'me', 'aux', 'macro', 'num', 'db', 'group', 'ms', 'port']) {
+  for (const k of ['input', 'me', 'aux', 'macro', 'num', 'db', 'group', 'ms', 'port', 'cam']) {
     if (s[k] !== undefined && s[k] !== '' && Number.isFinite(Number(s[k]))) out[k] = Number(s[k]);
   }
   return out;
@@ -57,9 +58,10 @@ function parseOscArgs(text) {
 }
 
 class ActionManager extends EventEmitter {
-  constructor({ file, log = () => {} }) {
+  constructor({ file, log = () => {}, deviceIo = {} }) {
     super();
     this.file = file;
+    this.deviceIo = deviceIo; // za teste: navidezna serijska vrata
     this.log = log;
     const data = readJson(file, {});
     this.devices = (Array.isArray(data.devices) ? data.devices : []).map(normDevice);
@@ -83,7 +85,7 @@ class ActionManager extends EventEmitter {
 
   _connect(d) {
     const Cls = DEVICE_TYPES[d.type];
-    const c = new Cls(d);
+    const c = new Cls(d, this.deviceIo);
     c.on('log', (l) => this.log(l));
     c.on('status', () => this.emit('changed'));
     c.on('names', () => this._updateCache(d.id));
@@ -144,7 +146,14 @@ class ActionManager extends EventEmitter {
     if (error) throw new Error(`${label}: ${error}`);
   }
 
-  /** Ukaz neposredno napravi (plošča ATEM v vmesniku). */
+  /** Premik PTZ kamere iz vmesnika (ponavlja se, dokler držiš joystick). */
+  ptzMove(deviceId, cam, pan, tilt, zoom) {
+    const c = this.conns.get(deviceId);
+    if (!c || typeof c.move !== 'function') throw new Error('PTZ kontroler ni nastavljen');
+    c.move(cam, pan, tilt, zoom);
+  }
+
+  /** Ukaz neposredno napravi (plošča ATEM ali PTZ v vmesniku). */
   async deviceRun(deviceId, step) {
     const d = this.devices.find((x) => x.id === deviceId);
     if (!d) throw new Error('Naprava ne obstaja');
@@ -248,7 +257,8 @@ class ActionManager extends EventEmitter {
         await new Promise((r) => setTimeout(r, Math.max(0, Math.min(60000, step.ms || 0))));
         return;
       case 'atem':
-      case 'xr18': {
+      case 'xr18':
+      case 'ptz': {
         const c = this.conns.get(step.deviceId);
         if (!c) throw new Error('Naprava ni nastavljena');
         await c.run(step);

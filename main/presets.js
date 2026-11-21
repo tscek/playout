@@ -63,6 +63,22 @@ function xrPresets(d, cache) {
   return out;
 }
 
+function ptzPresets(d, cache) {
+  const out = [];
+  const add = (key, group, label, step, kind) => out.push({ id: `${d.id}.${key}`, group, kind, label, step: { type: 'ptz', deviceId: d.id, ...step } });
+  for (const c of cache.cams || []) {
+    if (c.enabled === false) continue;
+    const g = `PTZ ${c.name || `kamera ${c.i}`}`;
+    add(`select.${c.i}`, g, `Izberi: ${c.name}`, { cmd: 'select', cam: c.i }, 'Kamera');
+    for (const p of (cache.presets && cache.presets[c.i]) || []) {
+      if (!p.stored) continue;
+      add(`recall.${c.i}.${p.n}`, g, `${c.name}: ${p.name || `preset ${p.n}`}`, { cmd: 'recall', cam: c.i, num: p.n }, 'Preseti');
+    }
+  }
+  add('stop', `PTZ ${d.name}`, 'STOP (ustavi vse kamere)', { cmd: 'stop' }, 'Kontroler');
+  return out;
+}
+
 /** Vsi preseti za seznam naprav. cacheOf(d) vrne zadnja znana imena naprave. */
 function buildPresets(devices, cacheOf) {
   const out = [];
@@ -70,6 +86,7 @@ function buildPresets(devices, cacheOf) {
     const c = cacheOf(d) || {};
     if (d.type === 'atem') out.push(...atemPresets(d, c));
     else if (d.type === 'xr18') out.push(...xrPresets(d, c));
+    else if (d.type === 'ptz') out.push(...ptzPresets(d, c));
   }
   return out;
 }
@@ -100,6 +117,11 @@ function presetStep(pid, devices) {
     }
     if (['mutegroup', 'unmutegroup'].includes(cmd) && num(a) >= 1 && num(a) <= 4) return { type: 'xr18', deviceId: d.id, cmd, group: num(a) };
   }
+  if (d.type === 'ptz') {
+    if (cmd === 'stop' && a === undefined) return { type: 'ptz', deviceId: d.id, cmd };
+    if (cmd === 'select' && num(a) !== null) return { type: 'ptz', deviceId: d.id, cmd, cam: num(a) };
+    if (cmd === 'recall' && num(a) !== null && num(b) >= 1 && num(b) <= 50) return { type: 'ptz', deviceId: d.id, cmd, cam: num(a), num: num(b) };
+  }
   return null;
 }
 
@@ -115,6 +137,13 @@ function cacheFromInfo(type, info) {
     };
   }
   if (type === 'xr18') return { names: info.names || { ch: {}, bus: {}, dca: {} } };
+  if (type === 'ptz') {
+    const presets = {};
+    for (const [cam, list] of Object.entries(info.presets || {})) {
+      presets[cam] = list.filter((p) => p.stored).map((p) => ({ n: p.n, name: String(p.name || '').slice(0, 30), stored: true }));
+    }
+    return { cams: (info.cams || []).map((c) => ({ i: c.i, name: String(c.name || '').slice(0, 30), type: c.type, enabled: c.enabled !== false })), presets };
+  }
   return {};
 }
 

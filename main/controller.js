@@ -78,7 +78,7 @@ class Controller extends EventEmitter {
     this.actions = actions; // shranjene akcije (ATEM, XR18, HTTP, OSC)
     if (actions) {
       actions.on('changed', () => this._changed());
-      actions.on('live', (id, live) => this.emit('atem', { id, live }));
+      actions.on('live', (id, live) => this.emit('devLive', { id, live }));
       actions.local = (step) => this._actionLocalStep(step); // koraki, ki jih izvede Playout sam (napisi)
     }
     this.osc = osc;

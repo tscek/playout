@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "atem-connection": "^3.11.0",
+    "serialport": "^13.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

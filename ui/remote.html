@@ -9,6 +9,7 @@
   <title>Playout – tablica</title>
   <link rel="stylesheet" href="remote.css">
   <link rel="stylesheet" href="atem-panel.css">
+  <link rel="stylesheet" href="ptz-panel.css">
 </head>
 <body>
   <div id="pin-screen" class="pin-screen hidden">
@@ -58,15 +59,18 @@
         <button data-t="titles">Napisi <span id="r-titles-on" class="cnt hidden"></span></button>
         <button data-t="actions">Akcije</button>
         <button data-t="atem" id="r-tab-atem" class="hidden">ATEM</button>
+        <button data-t="ptz" id="r-tab-ptz" class="hidden">PTZ</button>
       </div>
       <div class="pane" id="p-playlist"></div>
       <div class="pane hidden" id="p-titles"></div>
       <div class="pane hidden" id="p-actions"></div>
       <div class="pane hidden" id="p-atem"></div>
+      <div class="pane hidden" id="p-ptz"></div>
     </section>
   </main>
   <div id="r-error" class="toast hidden"></div>
   <script src="atem-panel.js"></script>
+  <script src="ptz-panel.js"></script>
   <script src="remote.js"></script>
 </body>
 </html>
