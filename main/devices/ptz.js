@@ -22,11 +22,13 @@ async function openSerial(path) {
   });
 }
 
-async function listSerial() {
+/** Seznam serijskih vrat. Napako knjižnice (npr. manjkajoč modul) vrne kot izjemo, da jo vidimo v dnevniku. */
+async function listSerial(strict = false) {
   try {
     const { SerialPort } = require('serialport');
     return await SerialPort.list();
-  } catch {
+  } catch (e) {
+    if (strict) throw new Error(`USB vrata ni mogoče prebrati: ${e.message}`);
     return [];
   }
 }
@@ -69,7 +71,7 @@ class PtzDevice extends EventEmitter {
     this.name = name;
     this.host = host;
     this.open = io.open || openSerial;
-    this.list = io.list || listSerial;
+    this.list = io.list || (() => listSerial(true));
     this.port = null;
     this.portPath = '';
     this.connected = false;
