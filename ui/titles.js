@@ -1,6 +1,6 @@
 'use strict';
 // Napisi: seznam napisov projekta, vklop na program, preview, urejanje in celostna podoba.
-/* global state, run, el, $, showError, previewMode, lsGet, lsSet */
+/* global state, run, el, $, showError, showInfo, previewMode, lsGet, lsSet */
 
 let selTitleId = null;
 let titleEditKey = '';
@@ -161,6 +161,14 @@ $('#btn-title-add').onclick = async () => {
   if (id) selectTitle(id);
 };
 $('#btn-titles-off').onclick = () => run('titles.allOff');
+$('#btn-tpl-folder').onclick = async () => {
+  const dir = await run('titles.openTemplates');
+  if (dir && typeof window.playoutDesktop === 'undefined') showInfo(`Mapa za lastne predloge: ${dir}`);
+};
+$('#btn-tpl-rescan').onclick = async () => {
+  const n = await run('titles.rescan');
+  if (n !== undefined) showInfo(n ? `Lastnih predlog: ${n}` : 'V mapi ni lastnih predlog (.html).');
+};
 
 // ---------- urejanje izbranega napisa ----------
 

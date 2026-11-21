@@ -1,0 +1,94 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Tekoči trak</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); }
+.empty { display: none !important; }
+
+#box { position: absolute; left: 0; right: 0; bottom: 60px; height: 84px; display: flex; align-items: stretch; color: var(--text);
+  transform: translateY(160px); transition: transform .5s cubic-bezier(.2,.8,.2,1); }
+#tag { background: var(--accent); color: var(--bg); font-size: 34px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+  display: flex; align-items: center; padding: 0 34px 0 120px; white-space: nowrap; z-index: 1; }
+#main { flex: 1; background: var(--bg); position: relative; overflow: hidden; opacity: .96; }
+#crawl { position: absolute; top: 0; bottom: 0; left: 0; display: flex; align-items: center; white-space: nowrap; font-size: 40px; font-weight: 500;
+  will-change: transform; }
+#crawl span.sep { display: inline-block; width: 14px; height: 14px; background: var(--accent); border-radius: 50%; margin: 0 40px; vertical-align: middle; }
+#logo { display: none; background: #fff; align-items: center; justify-content: center; padding: 0 28px; z-index: 1; }
+#logo.has { display: flex; }
+#logo img { max-height: 66px; max-width: 200px; }
+#box.in { transform: none; }
+#box.out { transition-duration: .35s; }
+</style></head>
+<body><div id="stage"><div id="box" data-def="left">
+  <div id="tag"><span id="f1"></span></div>
+  <div id="main"><div id="crawl"></div></div>
+  <div id="logo"><img id="logoimg" alt=""></div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { const k = window.innerWidth / 1920; $('stage').style.transform = 'scale(' + k + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) {
+  if (s && typeof s === 'object') return s;
+  try { return JSON.parse(s); } catch (e) { return {}; }
+}
+// Besedilo teče od desne proti levi s stalno hitrostjo (px na sekundo); več novic loči znak | ali nova vrstica.
+const SPEED = 150;
+let text = '';
+let x = 0;
+let last = 0;
+let running = false;
+function build() {
+  const c = $('crawl');
+  c.innerHTML = '';
+  const parts = String(text).split(/\s*(?:\||\n)\s*/).filter(Boolean);
+  // dvakrat zapored, da trak teče brez praznine
+  for (let k = 0; k < 2; k++) {
+    for (const p of parts) {
+      const s = document.createElement('span');
+      s.textContent = p;
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      c.append(s, sep);
+    }
+  }
+}
+function frame(t) {
+  if (!running) return;
+  const c = $('crawl');
+  const dt = last ? (t - last) / 1000 : 0;
+  last = t;
+  x -= SPEED * dt;
+  const half = c.scrollWidth / 2;
+  if (half > 0 && -x >= half) x += half;
+  c.style.transform = 'translateX(' + x + 'px)';
+  requestAnimationFrame(frame);
+}
+function update(s) {
+  const d = parse(s);
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  $('f1').textContent = d.f1 || '';
+  $('tag').classList.toggle('empty', !d.f1);
+  if (d.logo) $('logoimg').src = d.logo; else $('logoimg').removeAttribute('src');
+  $('logo').classList.toggle('has', !!d.logo);
+  if ((d.f0 || '') !== text) {
+    text = d.f0 || '';
+    build();
+    if (!running) x = $('main').clientWidth || 1600;
+  }
+}
+function play() {
+  const b = $('box'); b.classList.remove('out'); void b.offsetWidth; b.classList.add('in');
+  x = $('main').clientWidth || 1600;
+  last = 0;
+  if (!running) { running = true; requestAnimationFrame(frame); }
+}
+function stop() { const b = $('box'); b.classList.add('out'); b.classList.remove('in'); setTimeout(() => { running = false; }, 600); }
+function next() {}
+</script></body></html>

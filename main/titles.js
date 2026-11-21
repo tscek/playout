@@ -45,7 +45,68 @@ const TEMPLATES = [
     fields: [],
     aligns: ['tr', 'tl', 'br', 'bl'],
   },
+  {
+    id: 'trak',
+    name: 'Tekoči trak (novice)',
+    fields: [{ key: 'f0', label: 'Besedilo (več novic loči z znakom |)' }, { key: 'f1', label: 'Oznaka (npr. NOVICE)' }],
+    aligns: [],
+  },
+  {
+    id: 'oddaja',
+    name: 'Naslov oddaje v kotu',
+    fields: [{ key: 'f0', label: 'Naslov oddaje' }, { key: 'f1', label: 'Podnaslov' }, { key: 'f2', label: 'Oznaka (npr. V ŽIVO)' }],
+    aligns: ['tl', 'tr'],
+  },
 ];
+
+// Lastne predloge (HTML v mapi "predloge" v podatkih aplikacije). Nastavi jih loadUserTemplates.
+let userTemplates = [];
+
+function allTemplates() {
+  return TEMPLATES.concat(userTemplates);
+}
+
+/**
+ * Prebere lastne predloge iz mape. Vsaka predloga je .html z enakimi funkcijami kot vgrajene (update, play, stop).
+ * Neobvezno v <head>: <meta name="playout-name" content="Ime">, <meta name="playout-fields" content="Ime|Funkcija">,
+ * <meta name="playout-aligns" content="left,center,right">.
+ */
+function loadUserTemplates(dir) {
+  const out = [];
+  let files = [];
+  try {
+    files = fs.readdirSync(dir).filter((f) => /\.html?$/i.test(f)).sort((a, b) => a.localeCompare(b, 'sl'));
+  } catch { /* mape še ni */ }
+  const used = new Set();
+  for (const f of files.slice(0, 100)) {
+    let html = '';
+    try {
+      html = fs.readFileSync(path.join(dir, f), 'utf8');
+    } catch {
+      continue;
+    }
+    const meta = (name) => {
+      const m = new RegExp(`<meta\\s+name=["']playout-${name}["']\\s+content=["']([^"']*)["']`, 'i').exec(html);
+      return m ? m[1].trim() : '';
+    };
+    const base = f.replace(/\.html?$/i, '');
+    let slug = base.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'predloga';
+    while (used.has(slug)) slug += '-2';
+    used.add(slug);
+    const labels = (meta('fields') || 'Besedilo 1|Besedilo 2|Besedilo 3').split('|').map((x) => x.trim()).filter(Boolean).slice(0, 3);
+    const aligns = meta('aligns').split(',').map((x) => x.trim()).filter((x) => ['left', 'center', 'right', 'tl', 'tr', 'bl', 'br'].includes(x));
+    out.push({
+      id: `user-${slug}`,
+      name: `${meta('name') || base} (moja)`,
+      fields: labels.map((label, i) => ({ key: `f${i}`, label })),
+      aligns,
+      user: true,
+      file: path.join(dir, f),
+    });
+  }
+  userTemplates = out;
+  return out;
+}
 
 const FONTS = ['Segoe UI', 'Arial', 'Calibri', 'Verdana', 'Tahoma', 'Trebuchet MS', 'Bahnschrift', 'Georgia', 'Montserrat', 'Roboto'];
 
@@ -68,7 +129,7 @@ function normBrand(b) {
 }
 
 function templateOf(id) {
-  return TEMPLATES.find((t) => t.id === id) || TEMPLATES[0];
+  return allTemplates().find((t) => t.id === id) || TEMPLATES[0];
 }
 
 /**
@@ -81,7 +142,8 @@ function normTitle(t) {
   const dur = Number(x.duration);
   return {
     id: typeof x.id === 'string' && x.id ? x.id : newId(),
-    template: tpl.id,
+    // lastna predloga, ki je trenutno ni v mapi, ohrani svoje ime (prikaže se kot klasični napis)
+    template: tpl.id !== x.template && typeof x.template === 'string' && /^user-[a-z0-9-]+$/.test(x.template) ? x.template : tpl.id,
     f0: str(x.f0),
     f1: str(x.f1),
     f2: str(x.f2, 60),
@@ -162,15 +224,21 @@ function titleLabel(t) {
   return txt || tpl.name;
 }
 
-/** Predloge iz aplikacije prekopira v mapo predlog motorja (samo spremenjene). */
+/** Predloge iz aplikacije in lastne predloge prekopira v mapo predlog motorja (samo spremenjene). */
 function installTemplates(targetDir) {
   if (!targetDir) return;
   const src = path.join(__dirname, 'gfx');
   fs.mkdirSync(targetDir, { recursive: true });
-  for (const f of fs.readdirSync(src)) {
-    if (!f.endsWith('.html')) continue;
-    const data = fs.readFileSync(path.join(src, f));
-    const dst = path.join(targetDir, `playout-${f}`);
+  const list = fs.readdirSync(src).filter((f) => f.endsWith('.html')).map((f) => ({ from: path.join(src, f), name: f }));
+  for (const t of userTemplates) list.push({ from: t.file, name: `${t.id}.html` });
+  for (const { from, name } of list) {
+    let data;
+    try {
+      data = fs.readFileSync(from);
+    } catch {
+      continue;
+    }
+    const dst = path.join(targetDir, `playout-${name}`);
     let same = false;
     try {
       same = fs.readFileSync(dst).equals(data);
@@ -179,4 +247,5 @@ function installTemplates(targetDir) {
   }
 }
 
-module.exports = { CLOCK_MODES, TEMPLATES, FONTS, DEFAULT_BRAND, normBrand, normTitle, Titles, titleLabel, templateOf, installTemplates };
+module.exports = { CLOCK_MODES, TEMPLATES, FONTS, DEFAULT_BRAND, normBrand, normTitle, Titles, titleLabel, templateOf, installTemplates,
+  loadUserTemplates, allTemplates };

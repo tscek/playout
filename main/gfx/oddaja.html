@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Naslov oddaje v kotu</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); }
+.empty { display: none !important; }
+
+#box { position: absolute; top: 60px; display: flex; align-items: stretch; color: var(--text); opacity: 0;
+  transform: translateY(-30px); transition: opacity .45s ease, transform .5s cubic-bezier(.2,.8,.2,1); }
+#box.tl { left: 70px; }
+#box.tr { right: 70px; flex-direction: row-reverse; text-align: right; }
+#logo { display: none; background: #fff; align-items: center; justify-content: center; padding: 8px 18px; }
+#logo.has { display: flex; }
+#logo img { max-height: 70px; max-width: 160px; }
+#txt { background: var(--bg); padding: 10px 26px 12px; display: flex; flex-direction: column; justify-content: center; border-left: 6px solid var(--accent); }
+#box.tr #txt { border-left: 0; border-right: 6px solid var(--accent); }
+#t0 { font-size: 36px; font-weight: 700; white-space: nowrap; line-height: 1.15; }
+#t1 { font-size: 24px; font-weight: 500; opacity: .85; white-space: nowrap; line-height: 1.2; }
+#live { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); font-weight: 800; letter-spacing: 1px; font-size: 22px; }
+#live::before { content: ''; width: 12px; height: 12px; border-radius: 50%; background: #e5383b; animation: b 1.2s ease-in-out infinite; }
+@keyframes b { 50% { opacity: .25; } }
+#box.in { opacity: 1; transform: none; }
+#box.out { transition-duration: .3s; }
+</style></head>
+<body><div id="stage"><div id="box" data-def="tl">
+  <div id="logo"><img id="logoimg" alt=""></div>
+  <div id="txt"><div id="t2"><span id="live"><span id="f2"></span></span></div><div id="t0"><span id="f0"></span></div><div id="t1"><span id="f1"></span></div></div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { const k = window.innerWidth / 1920; $('stage').style.transform = 'scale(' + k + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) {
+  if (s && typeof s === 'object') return s;
+  try { return JSON.parse(s); } catch (e) { return {}; }
+}
+function applyCommon(d) {
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  for (const k of ['f0', 'f1', 'f2']) if ($(k)) $(k).textContent = d[k] || '';
+  const img = $('logoimg');
+  if (img) { if (d.logo) img.src = d.logo; else img.removeAttribute('src'); }
+  if ($('logo')) $('logo').classList.toggle('has', !!d.logo);
+  const box = $('box');
+  for (const a of ['left', 'center', 'right', 'tl', 'tr', 'bl', 'br']) box.classList.toggle(a, (d.align || box.dataset.def) === a);
+  for (const k of ['f0', 'f1']) if ($(k)) $(k).parentElement.classList.toggle('empty', !d[k]);
+  $('t2').classList.toggle('empty', !d.f2);
+}
+function update(s) { applyCommon(parse(s)); }
+function play() { const b = $('box'); b.classList.remove('out'); void b.offsetWidth; b.classList.add('in'); }
+function stop() { const b = $('box'); b.classList.add('out'); b.classList.remove('in'); }
+function next() {}
+</script></body></html>

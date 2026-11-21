@@ -172,6 +172,11 @@ app.whenReady().then(async () => {
       return controller.importProject(f.filePaths[0], d.filePaths[0]);
     },
     'app.openLogs': () => shell.openPath(path.join(engineDir, 'logs')),
+    'titles.openTemplates': async () => {
+      const dir = controller.userTemplatesFolder();
+      await shell.openPath(dir);
+      return dir;
+    },
     'app.info': () => ({
       version: app.getVersion(),
       dataDir,

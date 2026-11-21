@@ -72,9 +72,15 @@ function showError(msg) {
     return;
   }
   el.textContent = msg;
-  el.classList.remove('hidden');
+  el.classList.remove('hidden', 'info');
   clearTimeout(showError.t);
   showError.t = setTimeout(() => el.classList.add('hidden'), 8000);
+}
+
+/** Obvestilo (ne napaka). */
+function showInfo(msg) {
+  showError(msg);
+  $('#error').classList.add('info');
 }
 
 async function run(action, args) {

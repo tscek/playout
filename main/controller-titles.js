@@ -2,10 +2,11 @@
 // Napisi na programu in v preview (dodano h Controller.prototype).
 // Vsak vklopljen napis ima svojo plast na programu (LAYER_TITLE..), neodvisno od posnetkov in playliste.
 
+const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { writeJson, readJson } = require('./store');
-const { Titles, TEMPLATES, FONTS, normBrand, titleLabel, templateOf, installTemplates } = require('./titles');
+const { Titles, FONTS, normBrand, titleLabel, templateOf, installTemplates, loadUserTemplates, allTemplates } = require('./titles');
 
 const PROGRAM_CHANNEL = 1;
 const PREVIEW_CHANNEL = 2;
@@ -16,12 +17,58 @@ const OUT_MS = 900; // čas za izhodno animacijo, potem plast počistimo
 /** Niz za AMCP (narekovaji in poševnice ubežani). */
 const amcpString = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n')}"`;
 
+const USER_README = `Lastne predloge za napise (Playout)
+====================================
+
+V to mapo daj svoje predloge kot datoteke .html. Pokažejo se med predlogami v zavihku Napisi
+(z oznako "moja"), ko klikneš "Osveži predloge" ali znova zaženeš aplikacijo.
+
+Predloga je spletna stran 1920 x 1080 s prosojnim ozadjem in tremi funkcijami:
+  update(podatki)  podatki (JSON): f0, f1, f2 (besedila), align, bg, accent, text (barve), font, logo (naslov slike)
+  play()           animacija prihoda
+  stop()           animacija odhoda (po 0,9 s se napis odstrani)
+
+V <head> lahko dodaš:
+  <meta name="playout-name" content="Ime predloge">
+  <meta name="playout-fields" content="Ime|Funkcija|Oznaka">     (imena polj, največ 3)
+  <meta name="playout-aligns" content="left,center,right">       (možni položaji: left, center, right, tl, tr, bl, br)
+
+Primer: preimenuj "primer.html.txt" v "primer.html" in ga spremeni (barve, pisave, animacije).
+Predlogo ti lahko pripravi tudi Claude: opiši, kako naj napis izgleda.
+`;
+
 const methods = {
   _initTitles() {
     this.titleSlots = new Map(); // plast -> { titleId, closing, gen }
     this.titlePvw = null; // id napisa v preview
     this._titleGen = 0;
     this._titleTimers = new Map(); // titleId -> timer za samodejni izklop
+    this.userTemplatesDir = this.dataDir ? path.join(this.dataDir, 'predloge') : null;
+    if (this.userTemplatesDir) loadUserTemplates(this.userTemplatesDir);
+  },
+
+  /** Mapa za lastne predloge (ob prvem odprtju dobi navodila in primer). */
+  userTemplatesFolder() {
+    const dir = this.userTemplatesDir;
+    if (!dir) this._error('Mapa za predloge ni na voljo');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      const gfx = path.join(__dirname, 'gfx');
+      fs.writeFileSync(path.join(dir, 'PREBERI.txt'), USER_README, 'utf8');
+      const ex = fs.readFileSync(path.join(gfx, 'klasicni.html'), 'utf8')
+        .replace('<title>Klasični napis</title>', '<title>Primer</title>\n<meta name="playout-name" content="Primer (kopija klasičnega)">\n<meta name="playout-fields" content="Ime|Funkcija">\n<meta name="playout-aligns" content="left,center,right">');
+      fs.writeFileSync(path.join(dir, 'primer.html.txt'), ex, 'utf8');
+    }
+    return dir;
+  },
+
+  /** Ponovno prebere lastne predloge in jih namesti v motor. */
+  async rescanTemplates() {
+    const list = this.userTemplatesDir ? loadUserTemplates(this.userTemplatesDir) : [];
+    this._installTemplates();
+    this._changed();
+    for (const t of this.titles.items) if (t.template.startsWith('user-')) await this._refreshTitle(t, true);
+    return list.length;
   },
 
   _openTitles(dir) {
@@ -36,6 +83,7 @@ const methods = {
 
   _installTemplates() {
     try {
+      if (this.userTemplatesDir) loadUserTemplates(this.userTemplatesDir);
       installTemplates(this.templateDir);
     } catch (e) {
       if (this.engine && this.engine._log) this.engine._log(`Predlog za napise ni bilo mogoče namestiti: ${e.message}`);
@@ -46,7 +94,8 @@ const methods = {
     const onAir = [];
     for (const s of this.titleSlots.values()) if (!s.closing) onAir.push(s.titleId);
     return {
-      templates: TEMPLATES,
+      templates: allTemplates().map(({ file, ...t }) => t),
+      userDir: this.userTemplatesDir,
       fonts: FONTS,
       brand: this.project.brand,
       items: this.titles.items.map((t) => ({ ...t, label: titleLabel(t) })),

@@ -1,3 +1,26 @@
+# Test v0.15.0: PTZ prek USB, lastne predloge napisov
+
+Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.14.0 (opis spodaj): slideshow, ATEM ploščo, presete, napis na vnosu.
+
+## Novo v 0.15.0
+
+1. **PTZ prek USB kontrolerja (ESP32)**: priklopi kontroler z USB kablom (nativni USB port ESP32-S3) na računalnik.
+   V oknu *Akcije* klikni **+ PTZ kontroler (USB)**. Polje *USB (COM)* pusti prazno: aplikacija sama najde ESP32
+   (če ga ne, vpiši vrata, npr. `COM5`; seznam se pokaže v polju). Ob povezavi kontroler ne sme narediti ponovnega zagona.
+   - Zavihek **PTZ** levo spodaj (in na tablici): kamere z imeni iz kontrolerja, rdeča = na programu, zelena = v preview
+     (iz ATEM prek kontrolerja), modri okvir = izbrana. Tap na kamero jo izbere (kot na iPadu).
+   - **Joystick**: drži in vleci krog (levo/desno, gor/dol); desno je **zoom** (gor TELE, dol WIDE). Ko spustiš, se kamera ustavi.
+     Če se povezava z aplikacijo prekine, kamera v manj kot pol sekunde obstane sama.
+   - **Preseti** izbrane kamere z imeni iz kontrolerja (tap = pojdi). *Shrani trenutni položaj kot preset*: številka in ime.
+   - **STOP** ustavi vse kamere, **Zakleni** vklopi isti zaklep kot rdeči STOP na iPadu.
+   - Rumena vrstica pove, zakaj se kamera ne premakne (na programu, zaklep, v uporabi je fizični joystick).
+   - PTZ preseti so tudi v *Preseti iz naprav* (okno Akcije): kot gumb akcije, bližnjica, akcija na začetku vnosa (npr. kamera gre na Govornika, ko se začne video).
+   - **Prosim, preveri na kontrolerju** (nisem ga mogel preizkusiti na pravi napravi): ali se ob povezavi ESP32 ne resetira,
+     ali joystick tekoče premika vse tri vrste kamer, in ali iPad in fizični joystick delujeta kot prej.
+2. **Lastne predloge napisov**: v zavihku Napisi gumb **📁 Moje predloge** odpre mapo (z navodili *PREBERI.txt* in primerom).
+   Datoteke .html iz te mape se po kliku na **⟳** pokažejo med predlogami z oznako *(moja)*. Predlogo ti lahko naredim jaz: opiši ali pošlji sliko, kako naj izgleda.
+3. **Novi predlogi**: *Tekoči trak (novice)* (več novic loči z znakom |) in *Naslov oddaje v kotu* (z utripajočo oznako, npr. V ŽIVO).
+
 # Test v0.14.0: slideshow, plošča ATEM, preseti, napisi na vnosu
 
 Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.13.0 in v0.12.0 (opisi spodaj).

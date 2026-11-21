@@ -1169,3 +1169,34 @@ test('PTZ kontroler prek USB: povezava, preseti, premik z varnostjo, napake', as
     await am.stop();
   }
 });
+
+test('lastne predloge napisov iz mape', async () => {
+  const { ctl, engine, dir } = makeController();
+  try {
+    const tdir = ctl.userTemplatesFolder();
+    assert.ok(fs.existsSync(path.join(tdir, 'PREBERI.txt')) && fs.existsSync(path.join(tdir, 'primer.html.txt')));
+    fs.copyFileSync(path.join(tdir, 'primer.html.txt'), path.join(tdir, 'Moj Šport.html'));
+    assert.strictEqual(await ctl.rescanTemplates(), 1);
+    const tpl = ctl.titlesState().templates.find((t) => t.user);
+    assert.strictEqual(tpl.id, 'user-moj-sport');
+    assert.strictEqual(tpl.name, 'Primer (kopija klasičnega) (moja)');
+    assert.deepStrictEqual(tpl.fields.map((f) => f.label), ['Ime', 'Funkcija']);
+    assert.ok(!('file' in tpl));
+    const id = ctl.addTitle({ template: 'user-moj-sport', f0: 'A', align: 'right' });
+    assert.strictEqual(ctl.titles.get(id).template, 'user-moj-sport');
+    assert.strictEqual(ctl.titles.get(id).align, 'right');
+    ctl.templateDir = path.join(dir, 'tpl');
+    ctl._installTemplates();
+    assert.ok(fs.existsSync(path.join(dir, 'tpl', 'playout-user-moj-sport.html')));
+    assert.ok(fs.existsSync(path.join(dir, 'tpl', 'playout-trak.html')));
+    // predloga izgine iz mape: napis ohrani ime predloge, prikaže se s klasično
+    fs.rmSync(path.join(tdir, 'Moj Šport.html'));
+    await ctl.rescanTemplates();
+    const { Titles } = require('../main/titles');
+    const again = new Titles(ctl.titles.toJSON());
+    assert.strictEqual(again.get(id).template, 'user-moj-sport');
+    assert.match(ctl._titleCmd(1, 60, again.get(id), 'add'), /"playout-klasicni"/);
+  } finally {
+    await engine.stop();
+  }
+});
