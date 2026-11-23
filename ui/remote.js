@@ -187,6 +187,7 @@ function render() {
   $('#r-panic').classList.toggle('on', !!state.panic);
   $('#r-panic').title = state.panic ? 'Panika je vklopljena – tapni za izklop' : 'Drži za paniko';
   renderNow();
+  renderGfx();
   renderPlaylist();
   renderTitles();
   renderActions();
@@ -239,6 +240,20 @@ function renderPlaylist() {
     box.append(gd);
   }
   if (!n) box.append(el('div', 'empty', 'Playlista je prazna.'));
+}
+
+function renderGfx() {
+  const O = state.overlays || { items: [], next: null };
+  $('#r-gfx').classList.toggle('hidden', !O.items.length);
+  const nx = O.items.find((o) => o.id === O.next);
+  const box = $('#r-gfx-next');
+  box.innerHTML = '';
+  if (nx) box.append(document.createTextNode(`Naslednji ${O.items.indexOf(nx) + 1}: `), el('b', '', nx.name));
+  else box.textContent = 'Napis: ni naslednjega';
+  const on = O.items.filter((o) => o.onAir).length;
+  $('#r-gfx-go').disabled = !nx;
+  $('#r-gfx-off').disabled = !on;
+  $('#r-gfx-off').classList.toggle('live', !!on);
 }
 
 function renderTitles() {
@@ -358,6 +373,17 @@ setTab(tab);
 // ---------- gumbi ----------
 
 $('#r-cut').onclick = () => run('take.cut');
+$('#r-gfx-go').onclick = () => run('ovl.go');
+$('#r-gfx-off').onclick = () => run('ovl.off');
+const gfxStep = (dir) => {
+  const O = state && state.overlays;
+  if (!O || !O.items.length) return;
+  const i = O.items.findIndex((o) => o.id === O.next);
+  const j = i === -1 ? (dir > 0 ? 0 : O.items.length - 1) : Math.max(0, Math.min(O.items.length - 1, i + dir));
+  run('ovl.next', { id: O.items[j].id });
+};
+$('#r-gfx-prev').onclick = () => gfxStep(-1);
+$('#r-gfx-nextb').onclick = () => gfxStep(1);
 $('#r-auto').onclick = () => run('take.auto');
 $('#r-prev').onclick = () => run('remote.command', { cmd: 'prev' });
 $('#r-next').onclick = () => run('remote.command', { cmd: 'next' });

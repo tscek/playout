@@ -534,3 +534,19 @@ body.resizing { cursor: row-resize; user-select: none; }
 .ovl-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 10px 10px 38px; cursor: default; }
 .ovl-detail input[type=range] { width: 110px; }
 .ovl-detail input[type=number] { width: 56px; padding: 3px 4px; }
+
+/* Napis / grafika poleg CUT in AUTO */
+.gfx-box { border: 1px solid rgba(240,168,48,.5); border-radius: 8px; padding: 6px; display: grid; gap: 6px; background: rgba(240,168,48,.05); }
+.gfx-head { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--amber); }
+.gfx-head span { flex: 1; }
+.gfx-next { font-size: 12px; color: var(--text, #ddd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gfx-next b { color: var(--amber); }
+.gfx-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.gfx-btns .take-btn { font-size: 17px; padding: 10px 4px; }
+.take-btn.gfx-go { background: var(--amber); color: #1a1a1a; }
+.take-btn.gfx-off { background: #55303a; }
+.take-btn.gfx-off.live { background: #b3262a; }
+.gfx-btns .take-btn:disabled { opacity: .35; }
+.gfx-on { font-size: 11px; color: #ff8a8c; display: grid; gap: 2px; }
+.gfx-on:empty { display: none; }
+.gfx-on div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }

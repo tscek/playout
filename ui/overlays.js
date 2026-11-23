@@ -1,6 +1,6 @@
 'use strict';
 // Seznam "Čez program": napisi in grafike čez program s svojim NEXT in GO (ne zamenjajo programa).
-/* global state, run, el, $, drag:writable */
+/* global state, run, el, $, drag:writable, accLabel */
 
 let ovlOpenId = null; // vnos z odprtimi podrobnostmi
 let ovlDrag = null; // id vnosa, ki ga vlečemo
@@ -99,8 +99,48 @@ function ovlDetails(o) {
   return box;
 }
 
+/** Razdelek poleg CUT/AUTO: naslednji, GO, DOL in kaj je zdaj čez program. */
+function renderGfxBox() {
+  if (!$('#gfx-box')) return;
+  const S = ovlSt();
+  const hk = (state.settings && state.settings.hotkeys) || {};
+  const nx = S.items.find((o) => o.id === S.next);
+  const i = nx ? S.items.indexOf(nx) : -1;
+  const box = $('#gfx-next');
+  box.innerHTML = '';
+  if (nx) box.append(document.createTextNode(`Naslednji ${i + 1}: `), el('b', '', nx.name));
+  else box.textContent = S.items.length ? 'Naslednji: — (izberi v seznamu ali ◀ ▶)' : 'Seznam Čez program je prazen (spodaj v playlisti).';
+  box.title = nx ? nx.name : '';
+  const on = S.items.filter((o) => o.onAir);
+  $('#gfx-go').disabled = !nx;
+  $('#gfx-go').querySelector('small').textContent = accLabel(hk.ovlGo) || 'napis';
+  $('#gfx-off').disabled = !on.length;
+  $('#gfx-off').classList.toggle('live', !!on.length);
+  $('#gfx-off').querySelector('small').textContent = accLabel(hk.ovlOff) || (on.length > 1 ? `vse (${on.length})` : 'vse');
+  $('#gfx-prev').disabled = !S.items.length;
+  $('#gfx-nextb').disabled = !S.items.length;
+  const onBox = $('#gfx-on');
+  onBox.innerHTML = '';
+  for (const o of on) {
+    const d = el('div', '', `● ${o.name}`);
+    d.title = 'Klik: samo ta dol';
+    d.onclick = () => run('ovl.off', { id: o.id });
+    onBox.append(d);
+  }
+}
+
+function ovlStep(dir) {
+  const S = ovlSt();
+  if (!S.items.length) return;
+  const i = S.items.findIndex((o) => o.id === S.next);
+  const j = i === -1 ? (dir > 0 ? 0 : S.items.length - 1) : Math.max(0, Math.min(S.items.length - 1, i + dir));
+  run('ovl.next', { id: S.items[j].id });
+}
+
 function renderOverlays() {
-  if (!state || !$('#ovl-list')) return;
+  if (!state) return;
+  renderGfxBox();
+  if (!$('#ovl-list')) return;
   const list = $('#ovl-list');
   const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest('#ovl-list');
   if (focused && ['number', 'range'].includes(document.activeElement.type)) return;
@@ -204,6 +244,10 @@ function ovlDrop(ev, index) {
     ev.target.blur();
   };
   $('#ovl-go').onclick = () => run('ovl.go');
+  $('#gfx-go').onclick = () => run('ovl.go');
+  $('#gfx-off').onclick = () => run('ovl.off');
+  $('#gfx-prev').onclick = () => ovlStep(-1);
+  $('#gfx-nextb').onclick = () => ovlStep(1);
   $('#ovl-off').onclick = () => run('ovl.off');
   const fold = $('#ovl-fold');
   const apply = () => {
