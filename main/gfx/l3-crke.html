@@ -1,0 +1,66 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lower third: črka za črko</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); color: var(--text); }
+#lt { position: absolute; bottom: 130px; display: flex; flex-direction: column; align-items: flex-start; }
+#lt.left { left: 150px; }
+#lt.right { right: 150px; align-items: flex-end; }
+#lt.center { left: 0; right: 0; align-items: center; }
+#t0 { font-size: 76px; font-weight: 800; line-height: 1.1; white-space: nowrap; text-shadow: 0 3px 16px rgba(0,0,0,.6); }
+#t0 .ch { display: inline-block; opacity: 0; transform: translateY(40%) rotate(6deg); filter: blur(6px);
+  transition: opacity .35s ease, transform .45s cubic-bezier(.2,1.2,.3,1), filter .35s ease; white-space: pre; }
+#lt.in #t0 .ch { opacity: 1; transform: none; filter: none; }
+#rule { height: 7px; width: 0; background: var(--accent); margin: 10px 0 12px; border-radius: 4px; transition: width .7s cubic-bezier(.2,.9,.2,1); }
+#lt.in #rule { width: var(--rule, 300px); }
+#t1 { font-size: 40px; font-weight: 500; line-height: 1.2; white-space: nowrap; text-shadow: 0 2px 10px rgba(0,0,0,.6);
+  opacity: 0; transform: translateY(16px); transition: opacity .5s ease, transform .5s ease; }
+#t1.empty { display: none; }
+#lt.in #t1 { opacity: 1; transform: none; }
+#lt.out { opacity: 0; transition: opacity .4s ease .2s; }
+#lt.out .ch, #lt.out #t1, #lt.out #rule { transition-delay: 0s !important; }
+</style></head>
+<body><div id="stage"><div id="lt" class="left">
+  <div id="t0"><span id="f0"></span></div>
+  <div id="rule"></div>
+  <div id="t1"><span id="f1"></span></div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { $('stage').style.transform = 'scale(' + window.innerWidth / 1920 + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) { if (s && typeof s === 'object') return s; try { return JSON.parse(s); } catch (e) { return {}; } }
+let last = null;
+function update(s) {
+  const d = parse(s);
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  const txt = d.f0 || '';
+  if (txt !== last) {
+    last = txt;
+    const f0 = $('f0');
+    f0.textContent = '';
+    [...txt].forEach((c, i) => {
+      const sp = document.createElement('span');
+      sp.className = 'ch';
+      sp.textContent = c;
+      sp.style.transitionDelay = (0.04 * i) + 's';
+      f0.append(sp);
+    });
+    $('t1').style.transitionDelay = (0.04 * txt.length + 0.15) + 's';
+  }
+  $('f1').textContent = d.f1 || '';
+  $('t1').classList.toggle('empty', !d.f1);
+  const lt = $('lt');
+  for (const a of ['left', 'center', 'right']) lt.classList.toggle(a, (d.align || 'left') === a);
+  requestAnimationFrame(() => r.setProperty('--rule', Math.max(160, Math.min(900, $('t0').offsetWidth * 0.45)) + 'px'));
+}
+function play() { const lt = $('lt'); lt.classList.remove('out'); void lt.offsetWidth; lt.classList.add('in'); }
+function stop() { const lt = $('lt'); lt.classList.add('out'); lt.classList.remove('in'); }
+function next() {}
+</script></body></html>

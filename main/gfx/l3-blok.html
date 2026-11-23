@@ -1,0 +1,61 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lower third: poševni bloki</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); }
+#lt { position: absolute; bottom: 110px; display: flex; flex-direction: column; align-items: flex-start; }
+#lt.left { left: 120px; }
+#lt.right { right: 120px; align-items: flex-end; }
+#tag { background: var(--accent); color: var(--bg); font-size: 28px; font-weight: 900; letter-spacing: .12em; padding: 6px 22px; transform: skewX(-14deg) translateY(30px);
+  opacity: 0; transition: transform .4s cubic-bezier(.2,.9,.2,1) .55s, opacity .3s ease .55s; margin-left: 18px; }
+#lt.right #tag { margin-left: 0; margin-right: 18px; }
+#tag > span { display: inline-block; transform: skewX(14deg); }
+#tag.empty { display: none; }
+#main { position: relative; display: flex; align-items: stretch; }
+#lt.right #main { flex-direction: row-reverse; }
+#chip { width: 34px; background: var(--accent); transform: skewX(-14deg) translateX(-400px); opacity: 0;
+  transition: transform .45s cubic-bezier(.2,.9,.2,1), opacity .2s; }
+#lt.right #chip { transform: skewX(-14deg) translateX(400px); }
+#name { background: var(--bg); color: var(--text); font-size: 64px; font-weight: 800; padding: 14px 44px 12px 36px; white-space: nowrap; line-height: 1.12;
+  transform: skewX(-14deg); clip-path: inset(0 100% 0 0); transition: clip-path .6s cubic-bezier(.2,.9,.2,1) .2s; margin-left: 8px; }
+#lt.right #name { margin-left: 0; margin-right: 8px; clip-path: inset(0 0 0 100%); }
+#name > span, #sub > span { display: inline-block; transform: skewX(14deg); }
+#sub { background: #fff; color: var(--bg); font-size: 36px; font-weight: 600; padding: 8px 36px 8px 30px; white-space: nowrap; line-height: 1.15;
+  transform: skewX(-14deg); clip-path: inset(0 100% 0 0); transition: clip-path .55s cubic-bezier(.2,.9,.2,1) .42s; margin-left: 58px; margin-top: 4px; }
+#lt.right #sub { margin-left: 0; margin-right: 58px; clip-path: inset(0 0 0 100%); }
+#sub.empty { display: none; }
+#lt.in #chip { transform: skewX(-14deg); opacity: 1; }
+#lt.in #name, #lt.in #sub { clip-path: inset(0 0 0 0); }
+#lt.in #tag { transform: skewX(-14deg); opacity: 1; }
+#lt.out { opacity: 0; transition: opacity .35s ease .3s; }
+#lt.out * { transition-delay: 0s !important; transition-duration: .35s !important; }
+</style></head>
+<body><div id="stage"><div id="lt" class="left">
+  <div id="tag"><span id="f2"></span></div>
+  <div id="main"><div id="chip"></div><div id="name"><span id="f0"></span></div></div>
+  <div id="sub"><span id="f1"></span></div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { $('stage').style.transform = 'scale(' + window.innerWidth / 1920 + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) { if (s && typeof s === 'object') return s; try { return JSON.parse(s); } catch (e) { return {}; } }
+function update(s) {
+  const d = parse(s);
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  for (const k of ['f0', 'f1', 'f2']) $(k).textContent = d[k] || '';
+  $('sub').classList.toggle('empty', !d.f1);
+  $('tag').classList.toggle('empty', !d.f2);
+  const lt = $('lt');
+  for (const a of ['left', 'right']) lt.classList.toggle(a, (d.align || 'left') === a);
+}
+function play() { const lt = $('lt'); lt.classList.remove('out'); void lt.offsetWidth; lt.classList.add('in'); }
+function stop() { const lt = $('lt'); lt.classList.add('out'); lt.classList.remove('in'); }
+function next() {}
+</script></body></html>

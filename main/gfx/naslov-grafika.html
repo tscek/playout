@@ -1,0 +1,65 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Glavni naslov z grafiko</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); color: var(--text); overflow: hidden; }
+#plate { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; overflow: hidden;
+  background: radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--accent) 55%, var(--bg)) 0%, var(--bg) 55%, #000 120%); }
+#plate img, #plate video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+#plate.img img, #plate.vid video { display: block; }
+#plate.img img { animation: kb 18s linear infinite alternate; }
+@keyframes kb { from { transform: scale(1.02); } to { transform: scale(1.14) translate(-1.5%, -1%); } }
+#shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.1) 0%, rgba(0,0,0,.25) 45%, rgba(0,0,0,.7) 100%); }
+#box { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 140px; }
+#box.bl { top: auto; bottom: 140px; transform: none; align-items: flex-start; text-align: left; }
+#t2 { font-size: 30px; font-weight: 700; letter-spacing: .3em; color: var(--accent); text-transform: uppercase; opacity: 0; transform: translateY(-14px);
+  transition: all .5s ease .5s; margin-bottom: 18px; }
+#t2.empty { display: none; }
+#t0 { font-size: 120px; font-weight: 900; line-height: 1.02; letter-spacing: .12em; opacity: 0; filter: blur(10px);
+  transition: letter-spacing 1.2s cubic-bezier(.2,.9,.2,1) .25s, opacity .7s ease .25s, filter .7s ease .25s; text-shadow: 0 6px 30px rgba(0,0,0,.5); }
+#bar { width: 0; height: 8px; background: var(--accent); margin: 26px 0 22px; border-radius: 4px; transition: width .8s cubic-bezier(.2,.9,.2,1) .7s; }
+#t1 { font-size: 50px; font-weight: 400; line-height: 1.2; opacity: 0; transform: translateY(18px); transition: all .6s ease .9s; text-shadow: 0 3px 16px rgba(0,0,0,.5); }
+#t1.empty { display: none; }
+#stage.in #plate { opacity: 1; }
+#stage.in #t0 { letter-spacing: 0; opacity: 1; filter: none; }
+#stage.in #t2, #stage.in #t1 { opacity: 1; transform: none; }
+#stage.in #bar { width: 260px; }
+#stage.out #plate, #stage.out #box { opacity: 0; transition: opacity .6s ease !important; }
+#stage.out * { transition-delay: 0s !important; }
+</style></head>
+<body><div id="stage">
+  <div id="plate"><img id="img" alt=""><video id="vid" muted loop playsinline></video><div id="shade"></div></div>
+  <div id="box"><div id="t2"><span id="f2"></span></div><div id="t0"><span id="f0"></span></div><div id="bar"></div><div id="t1"><span id="f1"></span></div></div>
+</div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { $('stage').style.transform = 'scale(' + window.innerWidth / 1920 + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) { if (s && typeof s === 'object') return s; try { return JSON.parse(s); } catch (e) { return {}; } }
+let src = null;
+function update(s) {
+  const d = parse(s);
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  for (const k of ['f0', 'f1', 'f2']) $(k).textContent = d[k] || '';
+  $('t1').classList.toggle('empty', !d.f1);
+  $('t2').classList.toggle('empty', !d.f2);
+  $('box').classList.toggle('bl', d.align === 'bl');
+  const p = $('plate');
+  if ((d.image || '') !== src) {
+    src = d.image || '';
+    p.classList.remove('img', 'vid');
+    if (src && d.imageType === 'video') { $('vid').src = src; p.classList.add('vid'); $('vid').play().catch(() => {}); }
+    else if (src) { $('img').src = src; p.classList.add('img'); $('vid').removeAttribute('src'); }
+    else $('vid').removeAttribute('src');
+  }
+}
+function play() { const st = $('stage'); st.classList.remove('out'); void st.offsetWidth; st.classList.add('in'); if (src) $('vid').play().catch(() => {}); }
+function stop() { const st = $('stage'); st.classList.add('out'); st.classList.remove('in'); }
+function next() {}
+</script></body></html>

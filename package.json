@@ -1,7 +1,7 @@
 {
   "name": "playout",
   "productName": "Playout",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "description": "Playout za žive produkcije (upravljanje CasparCG motorja)",
   "main": "main/main.js",
   "private": true,

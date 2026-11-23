@@ -1,3 +1,32 @@
+# Test v0.16.0: potek prireditve (akcije v playlisti, seznam Čez program), novi napisi
+
+Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.15.1 (opis spodaj).
+
+1. **Akcije v playlisti**: v glavi skupine klikni **+ akcija** in izberi akcijo ali preset (ATEM, PTZ, XR18 ...).
+   Vrstica AKCIJA traja 0 s in se sproži, ko playlista pride do nje:
+   - akcija **za posnetkom** se sproži, ko se posnetek konča (ali ko ga zamenja naslednji), npr. *video → ATEM nazaj na kamero*;
+   - akcija **pred posnetkom** se sproži, ko gre posnetek na program, npr. *ATEM AUX na playout → video*;
+   - polje **+ s** = koliko sekund pozneje; ▶ = sproži takoj (za preizkus). Akcije s puščicami ▲▼ ali vlečenjem postaviš kamorkoli.
+   - Preview in puščici gor/dol akcije preskočita (v preview gre vedno naslednji posnetek).
+2. **Seznam Čez program** (spodaj v playlisti): napisi in grafike, ki gredo čez program in ga ne zamenjajo
+   (npr. napis čez motion background, ki teče naprej).
+   - Dodaš z **+ napis** ali **+ grafika** (video/slika iz Medijev) ali tako, da napis ali medij povlečeš v seznam.
+   - **GO ▶** da naslednjega (oranžni okvir, NEXT) čez program, prejšnjega iz seznama umakne. Klik na vrstico = ta je naslednji,
+     dvoklik ali ▶ = takoj čez program, ■ = dol, **Vse dol** = vse iz seznama dol.
+   - ⚙ pri vrstici: *dol po X s*, *ostane ob naslednjem* (npr. logo ali ura ostane, ko greš na naslednji napis),
+     za grafike še *konec* (izgine / ostane zadnja sličica / ponavlja), velikost, položaj, prosojnost, zvok.
+   - Bližnjice v Nastavitvah: *Čez program: GO* in *Čez program: vse dol*. Companion: `/api/overlay/go`, `/api/overlay/off`.
+   - Na tablici je seznam v zavihku Napisi.
+   - **Prosim, preizkusi s svojimi motion grafikami** (MOV s prosojnostjo, npr. ProRes 4444, ali WebM z alfo):
+     ali je ozadje prosojno in ali se predvajajo gladko.
+3. **Napisi bolj nastavljivi** (urejanje napisa): velikost naslova in podnaslova posebej, VELIKE ČRKE, svoja pisava,
+   svoja barva podnaslova. Deluje pri vseh predlogah (tudi lastnih, če imata polji id f0 in f1).
+4. **8 novih predlog**:
+   - animirani lower thirdi: *črta*, *poševni bloki* (z oznako V ŽIVO), *zaobljen z logom*, *črka za črko*;
+   - glavna naslova: *z grafiko v ozadju* (izbereš sliko ali video iz Medijev, slika se počasi približuje) in *otvoritev* (barvni prelet čez cel zaslon);
+   - *Na vrsti* (točka programa v kotu) in *Odjavna špica* (vrstice loči z |, naslov skupine začni z #, npr. `#Nastopajoči|Ana|Bor`).
+   - Video v ozadju naslova naj bo WebM; MP4 v napisih morda ne deluje.
+
 # Test v0.15.1: popravki po prvem testu
 
 1. **Slideshow, nastavitve kasneje**: v glavi skupine je gumb ⚙ (poleg trajanja slike), ki odpre isto okno kot pri ustvarjanju.

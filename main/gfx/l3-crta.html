@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lower third: črta</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); color: var(--text); }
+#lt { position: absolute; bottom: 130px; display: flex; align-items: stretch; gap: 26px; }
+#lt.left { left: 150px; }
+#lt.right { right: 150px; flex-direction: row-reverse; text-align: right; }
+#lt.center { left: 50%; transform: translateX(-50%); flex-direction: column; align-items: center; text-align: center; gap: 14px; }
+#line { width: 10px; background: var(--accent); border-radius: 5px; transform: scaleY(0); transform-origin: 50% 100%;
+  transition: transform .45s cubic-bezier(.3,.9,.2,1); box-shadow: 0 0 18px rgba(0,0,0,.35); }
+#lt.center #line { width: 0; height: 8px; transform: scaleX(0); transform-origin: 50% 50%; transition: transform .45s cubic-bezier(.3,.9,.2,1), width 0s; }
+#lt.center.in #line { width: 220px; }
+#txt { display: flex; flex-direction: column; overflow: hidden; padding: 4px 6px; }
+#t0 { font-size: 72px; font-weight: 800; line-height: 1.08; white-space: nowrap; text-shadow: 0 3px 14px rgba(0,0,0,.55);
+  transform: translateX(-110%); transition: transform .6s cubic-bezier(.2,.9,.2,1) .25s; }
+#t1 { font-size: 40px; font-weight: 500; line-height: 1.2; white-space: nowrap; color: var(--accent); text-shadow: 0 2px 10px rgba(0,0,0,.55);
+  transform: translateX(-110%); transition: transform .6s cubic-bezier(.2,.9,.2,1) .4s; margin-top: 6px; }
+#lt.right #t0, #lt.right #t1 { transform: translateX(110%); }
+#lt.center #t0, #lt.center #t1 { transform: translateY(120%); }
+#lt.center #txt { order: -1; }
+#t1.empty { display: none; }
+#lt.in #line { transform: scale(1); }
+#lt.in #t0, #lt.in #t1 { transform: none; }
+#lt.out { opacity: 0; transition: opacity .4s ease .25s; }
+#lt.out #t0, #lt.out #t1 { transition-delay: 0s; transition-duration: .4s; }
+#lt.out #line { transition-delay: .2s; }
+</style></head>
+<body><div id="stage"><div id="lt" class="left">
+  <div id="line"></div>
+  <div id="txt"><div id="t0"><span id="f0"></span></div><div id="t1"><span id="f1"></span></div></div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { $('stage').style.transform = 'scale(' + window.innerWidth / 1920 + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) { if (s && typeof s === 'object') return s; try { return JSON.parse(s); } catch (e) { return {}; } }
+function update(s) {
+  const d = parse(s);
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  $('f0').textContent = d.f0 || '';
+  $('f1').textContent = d.f1 || '';
+  $('t1').classList.toggle('empty', !d.f1);
+  const lt = $('lt');
+  for (const a of ['left', 'center', 'right']) lt.classList.toggle(a, (d.align || 'left') === a);
+}
+function play() { const lt = $('lt'); lt.classList.remove('out'); void lt.offsetWidth; lt.classList.add('in'); }
+function stop() { const lt = $('lt'); lt.classList.add('out'); lt.classList.remove('in'); }
+function next() {}
+</script></body></html>

@@ -253,6 +253,28 @@ function renderTitles() {
     off.onclick = () => run('titles.allOff');
     box.append(off);
   }
+  const O = state.overlays || { items: [], next: null };
+  if (O.items.length) {
+    const h = el('div', 'grp-head');
+    h.append(el('span', '', 'Čez program'));
+    const go = el('button', 'small ovl-go', 'GO ▶');
+    go.disabled = !O.next;
+    go.onclick = () => run('ovl.go');
+    const off = el('button', 'small', 'Vse dol');
+    off.disabled = !O.items.some((o) => o.onAir);
+    off.onclick = () => run('ovl.off');
+    h.append(off, go);
+    box.append(h);
+    O.items.forEach((o, i) => {
+      const b = el('button', `ttl${o.onAir ? ' on' : ''}${o.id === O.next ? ' next' : ''}`);
+      b.append(el('span', 'st', o.onAir ? 'ČEZ PGM' : o.id === O.next ? 'NEXT' : String(i + 1)));
+      b.append(el('span', 'nm', o.name));
+      b.title = o.onAir ? 'Klik: dol' : 'Klik: takoj čez program';
+      b.onclick = () => run(o.onAir ? 'ovl.off' : 'ovl.go', { id: o.id });
+      box.append(b);
+    });
+    box.append(el('div', 'grp-head', 'Vsi napisi'));
+  }
   for (const t of T.items) {
     const on = T.onAir.includes(t.id);
     const b = el('button', `ttl${on ? ' on' : ''}`);

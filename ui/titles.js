@@ -223,7 +223,7 @@ function buildTitleEditor(box, t, on) {
     const inp = document.createElement('input');
     inp.className = 'text-input';
     inp.dataset.key = f.key;
-    inp.maxLength = f.key === 'f2' ? 60 : 200;
+    inp.maxLength = f.key === 'f2' ? 60 : f.key === 'f1' ? 2000 : 200;
     let timer = null;
     const send = () => titlePatch(t.id, { [f.key]: inp.value });
     if (on) {
@@ -314,6 +314,52 @@ function buildTitleEditor(box, t, on) {
   row('Levo / desno', posSlider('posX', 'Premik levo/desno (dvoklik = na mesto)'));
   row('Gor / dol', posSlider('posY', 'Premik gor/dol (dvoklik = na mesto)'));
 
+  // Velikost naslova in podnaslova, velike črke, pisava
+  const scaleSel = (key) => {
+    const sel = document.createElement('select');
+    sel.dataset.key = key;
+    for (const v of [0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5, 1.75, 2]) sel.add(new Option(v === 1 ? 'kot v predlogi' : `${Math.round(v * 100)} %`, String(v)));
+    sel.onchange = () => titlePatch(t.id, { [key]: Number(sel.value) });
+    return sel;
+  };
+  if (!tpl.clock && tpl.fields.length) {
+    const sz = el('div', 'te-colors');
+    const l0 = el('label', 'te-color');
+    l0.append(document.createTextNode('naslov '), scaleSel('s0'));
+    sz.append(l0);
+    if (tpl.fields.length > 1) {
+      const l1 = el('label', 'te-color');
+      l1.append(document.createTextNode('podnaslov '), scaleSel('s1'));
+      sz.append(l1);
+    }
+    const up = document.createElement('input');
+    up.type = 'checkbox';
+    up.dataset.key = 'upper';
+    up.onchange = () => titlePatch(t.id, { upper: up.checked });
+    const ul = el('label', 'te-own');
+    ul.append(up, document.createTextNode(' VELIKE ČRKE'));
+    sz.append(ul);
+    row('Velikost besedila', sz);
+  }
+  const fsel = document.createElement('select');
+  fsel.dataset.key = 'font';
+  fsel.add(new Option(`Pisava projekta (${T.brand.font})`, ''));
+  for (const f of T.fonts || []) fsel.add(new Option(f, f));
+  fsel.onchange = () => titlePatch(t.id, { font: fsel.value || null });
+  row('Pisava', fsel);
+
+  if (tpl.image) {
+    const im = document.createElement('select');
+    im.dataset.key = 'image';
+    im.add(new Option('Brez (barvno ozadje)', ''));
+    const media = state.library.filter((it) => it.type === 'image' || it.type === 'video')
+      .sort((a, b) => (a.rel || a.name).localeCompare(b.rel || b.name, 'sl'));
+    for (const it of media) im.add(new Option(`${it.type === 'video' ? '▶ ' : ''}${it.rel || it.name}`, it.id));
+    im.onchange = () => titlePatch(t.id, { image: im.value || null });
+    im.title = 'Slika ali video za ozadje naslova. Video naj bo WebM (MP4 v napisih morda ne deluje).';
+    row('Grafika v ozadju', im);
+  }
+
   // Logotip
   const lg = document.createElement('select');
   lg.dataset.key = 'logo';
@@ -351,6 +397,25 @@ function buildTitleEditor(box, t, on) {
     colors.append(l);
   }
   row('Barve', colors);
+  if (tpl.fields.length > 1 && !tpl.clock) {
+    const c2 = el('div', 'te-colors');
+    const on2 = document.createElement('input');
+    on2.type = 'checkbox';
+    on2.dataset.key = 'own2';
+    on2.onchange = () => titlePatch(t.id, { text2: on2.checked ? (t.text || titlesSt().brand.text) : null });
+    const l2 = el('label', 'te-own');
+    l2.append(on2, document.createTextNode(' svoja barva podnaslova'));
+    const c = document.createElement('input');
+    c.type = 'color';
+    c.dataset.key = 'text2';
+    let tm2 = null;
+    c.oninput = () => {
+      clearTimeout(tm2);
+      tm2 = setTimeout(() => titlePatch(t.id, { text2: c.value }), 150);
+    };
+    c2.append(l2, c);
+    row('Podnaslov', c2);
+  }
   box.append(grid);
 
   const btns = el('div', 'te-btns');
@@ -368,6 +433,16 @@ function syncTitleEditor(box, t) {
     if (inp === active) continue;
     const k = inp.dataset.key;
     if (k === 'own') inp.checked = !!(t.bg || t.accent || t.text);
+    else if (k === 'own2') inp.checked = !!t.text2;
+    else if (k === 'text2') {
+      inp.value = t.text2 || t.text || b.text;
+      inp.disabled = !t.text2;
+    } else if (k === 'upper') inp.checked = !!t.upper;
+    else if (k === 's0' || k === 's1') {
+      const v = String(t[k] || 1);
+      if (![...inp.options].some((o) => o.value === v)) inp.add(new Option(`${Math.round(Number(v) * 100)} %`, v));
+      inp.value = v;
+    } else if (k === 'font' || k === 'image') inp.value = t[k] || '';
     else if (k === 'logo') inp.value = t.logo === null ? '__brand' : t.logo;
     else if (k === 'bg' || k === 'accent' || k === 'text') {
       inp.value = t[k] || b[k];

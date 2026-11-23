@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Odjavna špica</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); color: var(--text); overflow: hidden; }
+#bg { position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--bg) 85%, transparent) 30%, color-mix(in srgb, var(--bg) 85%, transparent) 70%, transparent 100%);
+  opacity: 0; transition: opacity .6s ease; }
+#roll { position: absolute; left: 0; right: 0; top: 1080px; text-align: center; }
+#t0 { font-size: 64px; font-weight: 800; margin-bottom: 50px; }
+#t0 .acc { display: block; width: 120px; height: 6px; background: var(--accent); margin: 18px auto 0; border-radius: 3px; }
+#lines div { font-size: 40px; line-height: 1.5; }
+#lines div.h { color: var(--accent); font-size: 30px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin-top: 34px; }
+#stage.in #bg { opacity: 1; }
+#stage.out #bg, #stage.out #roll { opacity: 0; transition: opacity .5s ease; }
+</style></head>
+<body><div id="stage"><div id="bg"></div>
+  <div id="roll"><div id="t0"><span id="f0"></span><span class="acc"></span></div><div id="lines"></div><div id="f1" hidden></div></div>
+</div>
+<script>
+'use strict';
+// Vrstice v polju 2 loči z |. Vrstica, ki se začne z #, je naslov skupine (npr. "#Nastopajoči|Ana|Bor").
+const $ = (id) => document.getElementById(id);
+function fit() { $('stage').style.transform = 'scale(' + window.innerWidth / 1920 + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) { if (s && typeof s === 'object') return s; try { return JSON.parse(s); } catch (e) { return {}; } }
+let anim = null;
+let secs = 0;
+function update(s) {
+  const d = parse(s);
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  $('f0').textContent = d.f0 || '';
+  const box = $('lines');
+  box.textContent = '';
+  for (const raw of String(d.f1 || '').split('|')) {
+    const t = raw.trim();
+    if (!t) continue;
+    const el = document.createElement('div');
+    if (t.startsWith('#')) { el.className = 'h'; el.textContent = t.slice(1).trim(); } else el.textContent = t;
+    box.append(el);
+  }
+  secs = Number(d.f2) > 0 ? Number(d.f2) : 0;
+}
+function play() {
+  const st = $('stage');
+  st.classList.remove('out'); void st.offsetWidth; st.classList.add('in');
+  const roll = $('roll');
+  const dist = 1080 + roll.offsetHeight + 40;
+  const dur = (secs || Math.max(8, dist / 90)) * 1000; // privzeto ~90 px/s
+  if (anim) anim.cancel();
+  anim = roll.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(' + -dist + 'px)' }], { duration: dur, easing: 'linear', fill: 'forwards' });
+}
+function stop() { const st = $('stage'); st.classList.add('out'); st.classList.remove('in'); }
+function next() {}
+</script></body></html>

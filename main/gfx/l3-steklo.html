@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lower third: zaobljen</title>
+<style>
+:root { --bg: #0b3d91; --accent: #f5a623; --text: #ffffff; --font: 'Segoe UI', Arial, sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-family: var(--font); color: var(--text); }
+#lt { position: absolute; bottom: 120px; display: flex; align-items: center; gap: 22px; padding: 18px 46px 18px 22px; border-radius: 999px;
+  background: linear-gradient(100deg, color-mix(in srgb, var(--bg) 88%, transparent), color-mix(in srgb, var(--bg) 62%, transparent));
+  box-shadow: 0 14px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.18);
+  opacity: 0; transform: translateY(40px) scale(.9); transition: opacity .35s ease, transform .55s cubic-bezier(.2,1.4,.3,1); }
+#lt.left { left: 140px; transform-origin: 0 50%; }
+#lt.right { right: 140px; flex-direction: row-reverse; padding: 18px 22px 18px 46px; text-align: right; transform-origin: 100% 50%; }
+#lt.center { left: 50%; translate: -50% 0; }
+#badge { width: 92px; height: 92px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; transform: scale(0); transition: transform .45s cubic-bezier(.2,1.5,.3,1) .2s; }
+#badge img { width: 74%; height: 74%; object-fit: contain; }
+#badge:not(.has) { width: 26px; height: 26px; }
+#badge:not(.has)::after { content: ''; width: 100%; height: 100%; border-radius: 50%; background: var(--accent); animation: pulse 1.8s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); } 100% { box-shadow: 0 0 0 22px transparent; } }
+#txt { display: flex; flex-direction: column; }
+#t0 { font-size: 58px; font-weight: 700; line-height: 1.1; white-space: nowrap; opacity: 0; transform: translateY(14px); transition: all .45s ease .3s; }
+#t1 { font-size: 34px; font-weight: 400; line-height: 1.2; white-space: nowrap; opacity: 0; transform: translateY(14px); transition: all .45s ease .42s; color: color-mix(in srgb, var(--text) 82%, transparent); }
+#t1.empty { display: none; }
+#lt.in { opacity: 1; transform: none; }
+#lt.in #badge { transform: scale(1); }
+#lt.in #t0, #lt.in #t1 { opacity: 1; transform: none; }
+#lt.out { opacity: 0; transform: translateY(20px) scale(.95); transition-duration: .35s; }
+#lt.out * { transition-delay: 0s !important; }
+</style></head>
+<body><div id="stage"><div id="lt" class="left">
+  <div id="badge"><img id="logoimg" alt=""></div>
+  <div id="txt"><div id="t0"><span id="f0"></span></div><div id="t1"><span id="f1"></span></div></div>
+</div></div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+function fit() { $('stage').style.transform = 'scale(' + window.innerWidth / 1920 + ')'; }
+window.addEventListener('resize', fit); fit();
+function parse(s) { if (s && typeof s === 'object') return s; try { return JSON.parse(s); } catch (e) { return {}; } }
+function update(s) {
+  const d = parse(s);
+  const r = document.documentElement.style;
+  if (d.bg) r.setProperty('--bg', d.bg);
+  if (d.accent) r.setProperty('--accent', d.accent);
+  if (d.text) r.setProperty('--text', d.text);
+  if (d.font) r.setProperty('--font', "'" + d.font + "', 'Segoe UI', Arial, sans-serif");
+  $('f0').textContent = d.f0 || '';
+  $('f1').textContent = d.f1 || '';
+  $('t1').classList.toggle('empty', !d.f1);
+  if (d.logo) $('logoimg').src = d.logo; else $('logoimg').removeAttribute('src');
+  $('badge').classList.toggle('has', !!d.logo);
+  const lt = $('lt');
+  for (const a of ['left', 'center', 'right']) lt.classList.toggle(a, (d.align || 'left') === a);
+}
+function play() { const lt = $('lt'); lt.classList.remove('out'); void lt.offsetWidth; lt.classList.add('in'); }
+function stop() { const lt = $('lt'); lt.classList.add('out'); lt.classList.remove('in'); }
+function next() {}
+</script></body></html>

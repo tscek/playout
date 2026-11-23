@@ -33,6 +33,9 @@ V <head> lahko dodaš:
   <meta name="playout-fields" content="Ime|Funkcija|Oznaka">     (imena polj, največ 3)
   <meta name="playout-aligns" content="left,center,right">       (možni položaji: left, center, right, tl, tr, bl, br)
 
+Če ima predloga elementa z id="f0" in id="f1" (naslov in podnaslov), zanju v aplikaciji deluje tudi
+nastavitev velikosti, barve podnaslova in velikih črk.
+
 Primer: preimenuj "primer.html.txt" v "primer.html" in ga spremeni (barve, pisave, animacije).
 Predlogo ti lahko pripravi tudi Claude: opiši, kako naj napis izgleda.
 `;
@@ -113,10 +116,20 @@ const methods = {
       const it = this.library.items.find((x) => x.id === logoId);
       if (it && it.type === 'image') logo = pathToFileURL(it.path).href;
     }
+    let image = '';
+    let imageType = '';
+    if (t.image) {
+      const it = this.library.items.find((x) => x.id === t.image);
+      if (it && (it.type === 'image' || it.type === 'video')) {
+        image = pathToFileURL(it.path).href;
+        imageType = it.type;
+      }
+    }
     return {
       f0: t.f0, f1: t.f1, f2: t.f2, align: t.align,
-      bg: t.bg || b.bg, accent: t.accent || b.accent, text: t.text || b.text, font: b.font, logo,
+      bg: t.bg || b.bg, accent: t.accent || b.accent, text: t.text || b.text, font: t.font || b.font, logo,
       mode: t.mode, target: t.target, seconds: t.seconds,
+      s0: t.s0, s1: t.s1, text2: t.text2 || '', upper: t.upper, image, imageType,
     };
   },
 
@@ -126,7 +139,7 @@ const methods = {
     const k = Number(t.size) || 1;
     const al = t.align || 'center';
     const ax = /left|^tl$|^bl$/.test(al) ? 0.07 : /right|^tr$|^br$/.test(al) ? 0.93 : 0.5;
-    const mid = t.template === 'naslov' || (t.template === 'ura' && al === 'center');
+    const mid = ['naslov', 'naslov-grafika', 'naslov-otvoritev', 'odjava'].includes(t.template) || (t.template === 'ura' && al === 'center');
     const ay = mid ? 0.5 : /^t/.test(al) ? 0.08 : 0.9;
     const r = (v) => Math.round(v * 10000) / 10000;
     const dx = (Number(t.posX) || 0) / 100;

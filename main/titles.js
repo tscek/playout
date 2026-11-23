@@ -57,6 +57,55 @@ const TEMPLATES = [
     fields: [{ key: 'f0', label: 'Naslov oddaje' }, { key: 'f1', label: 'Podnaslov' }, { key: 'f2', label: 'Oznaka (npr. V ŽIVO)' }],
     aligns: ['tl', 'tr'],
   },
+  {
+    id: 'l3-crta',
+    name: 'Lower third: črta (animiran)',
+    fields: [{ key: 'f0', label: 'Ime / naslov' }, { key: 'f1', label: 'Funkcija / podnaslov' }],
+    aligns: ['left', 'center', 'right'],
+  },
+  {
+    id: 'l3-blok',
+    name: 'Lower third: poševni bloki (animiran)',
+    fields: [{ key: 'f0', label: 'Ime / naslov' }, { key: 'f1', label: 'Funkcija / podnaslov' }, { key: 'f2', label: 'Oznaka (npr. V ŽIVO)' }],
+    aligns: ['left', 'right'],
+  },
+  {
+    id: 'l3-steklo',
+    name: 'Lower third: zaobljen z logom (animiran)',
+    fields: [{ key: 'f0', label: 'Ime / naslov' }, { key: 'f1', label: 'Funkcija / podnaslov' }],
+    aligns: ['left', 'center', 'right'],
+  },
+  {
+    id: 'l3-crke',
+    name: 'Lower third: črka za črko (animiran)',
+    fields: [{ key: 'f0', label: 'Ime / naslov' }, { key: 'f1', label: 'Funkcija / podnaslov' }],
+    aligns: ['left', 'center', 'right'],
+  },
+  {
+    id: 'naslov-grafika',
+    name: 'Glavni naslov z grafiko (slika/video v ozadju)',
+    fields: [{ key: 'f0', label: 'Naslov' }, { key: 'f1', label: 'Podnaslov' }, { key: 'f2', label: 'Nadnaslov (npr. datum)' }],
+    aligns: ['center', 'bl'],
+    image: true,
+  },
+  {
+    id: 'naslov-otvoritev',
+    name: 'Glavni naslov: otvoritev (barvni prelet)',
+    fields: [{ key: 'f0', label: 'Naslov' }, { key: 'f1', label: 'Podnaslov' }, { key: 'f2', label: 'Oznaka (npr. datum)' }],
+    aligns: [],
+  },
+  {
+    id: 'tocka',
+    name: 'Na vrsti (točka programa)',
+    fields: [{ key: 'f0', label: 'Točka / nastopajoči' }, { key: 'f1', label: 'Opis ali ura' }, { key: 'f2', label: 'Oznaka (npr. NA VRSTI)' }],
+    aligns: ['tr', 'tl', 'br', 'bl'],
+  },
+  {
+    id: 'odjava',
+    name: 'Odjavna špica (tekoči seznam)',
+    fields: [{ key: 'f0', label: 'Naslov' }, { key: 'f1', label: 'Vrstice, ločene z | (#Naslov skupine)' }, { key: 'f2', label: 'Trajanje v sekundah (prazno = samodejno)' }],
+    aligns: [],
+  },
 ];
 
 // Lastne predloge (HTML v mapi "predloge" v podatkih aplikacije). Nastavi jih loadUserTemplates.
@@ -132,6 +181,8 @@ function templateOf(id) {
   return allTemplates().find((t) => t.id === id) || TEMPLATES[0];
 }
 
+const scaleOf = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.max(0.4, Math.min(2.5, Math.round(Number(v) * 100) / 100)) : 1);
+
 /**
  * Napis. Barve in logo: null = iz celostne podobe projekta, sicer svoja vrednost.
  * logo: null = logo projekta, '' = brez logotipa, id medija = drug logo.
@@ -145,7 +196,7 @@ function normTitle(t) {
     // lastna predloga, ki je trenutno ni v mapi, ohrani svoje ime (prikaže se kot klasični napis)
     template: tpl.id !== x.template && typeof x.template === 'string' && /^user-[a-z0-9-]+$/.test(x.template) ? x.template : tpl.id,
     f0: str(x.f0),
-    f1: str(x.f1),
+    f1: str(x.f1, 2000),
     f2: str(x.f2, 60),
     align: tpl.aligns.includes(x.align) ? x.align : tpl.aligns[0] || '',
     bg: isColor(x.bg) ? x.bg : null,
@@ -155,6 +206,12 @@ function normTitle(t) {
     duration: Number.isFinite(dur) && dur > 0 ? Math.min(3600, Math.round(dur)) : 0, // s, 0 = ostane
     posX: Number.isFinite(Number(x.posX)) ? Math.max(-100, Math.min(100, Math.round(Number(x.posX) * 10) / 10)) : 0, // % širine zaslona
     posY: Number.isFinite(Number(x.posY)) ? Math.max(-100, Math.min(100, Math.round(Number(x.posY) * 10) / 10)) : 0, // % višine, + = navzdol
+    font: typeof x.font === 'string' && x.font.trim() ? x.font.trim().slice(0, 60) : null, // null = pisava projekta
+    s0: scaleOf(x.s0), // velikost naslova (prvo polje), 1 = kot v predlogi
+    s1: scaleOf(x.s1), // velikost podnaslova
+    text2: isColor(x.text2) ? x.text2 : null, // barva podnaslova (null = kot v predlogi)
+    upper: !!x.upper, // naslov z velikimi črkami
+    image: typeof x.image === 'string' && x.image ? x.image : null, // grafika za glavni naslov (slika ali video)
     size: Number.isFinite(Number(x.size)) && Number(x.size) > 0 ? Math.max(0.4, Math.min(2, Math.round(Number(x.size) * 100) / 100)) : 1, // 1 = običajna velikost
     // ura: clock = trenutni čas, until = odštevanje do ure (target), timer = odštevanje (seconds), stopwatch = štoparica
     mode: CLOCK_MODES.includes(x.mode) ? x.mode : 'clock',
@@ -163,7 +220,8 @@ function normTitle(t) {
   };
 }
 
-const TITLE_KEYS = ['template', 'f0', 'f1', 'f2', 'align', 'bg', 'accent', 'text', 'logo', 'duration', 'mode', 'target', 'seconds', 'size', 'posX', 'posY'];
+const TITLE_KEYS = ['template', 'f0', 'f1', 'f2', 'align', 'bg', 'accent', 'text', 'logo', 'duration', 'mode', 'target', 'seconds', 'size', 'posX', 'posY',
+  'font', 's0', 's1', 'text2', 'upper', 'image'];
 
 class Titles {
   constructor(data) {
@@ -192,7 +250,7 @@ class Titles {
     if (!t) return null;
     const merged = { ...t };
     for (const k of TITLE_KEYS) if (k in patch) merged[k] = patch[k];
-    if (patch.resetStyle) Object.assign(merged, { bg: null, accent: null, text: null, logo: null });
+    if (patch.resetStyle) Object.assign(merged, { bg: null, accent: null, text: null, logo: null, text2: null, font: null, s0: 1, s1: 1, upper: false });
     if ('template' in patch && patch.template !== t.template) merged.align = undefined;
     Object.assign(t, normTitle(merged));
     return t;
@@ -211,7 +269,10 @@ class Titles {
 
   /** Mediji, ki jih napisi uporabljajo kot logo, ne obstajajo več: nazaj na logo projekta. */
   forgetMedia(mediaId) {
-    for (const t of this.items) if (t.logo === mediaId) t.logo = null;
+    for (const t of this.items) {
+      if (t.logo === mediaId) t.logo = null;
+      if (t.image === mediaId) t.image = null;
+    }
   }
 }
 
@@ -226,6 +287,42 @@ function titleLabel(t) {
   return txt || tpl.name;
 }
 
+/**
+ * Skupne nastavitve za vse predloge (tudi lastne): velikost naslova/podnaslova (#f0, #f1, #f2),
+ * barva podnaslova in velike črke. Doda se pred </body> in ovije funkcijo update() predloge.
+ */
+const COMMON_SNIPPET = `<style id="playout-common">
+#f0 { font-size: calc(1em * var(--s0, 1)); }
+#f1 { font-size: calc(1em * var(--s1, 1)); }
+html.pl-t2 #f1 { color: var(--text2) !important; }
+html.pl-up #f0 { text-transform: uppercase; }
+</style>
+<script>
+(function () {
+  var orig = window.update;
+  window.update = function (s) {
+    var d = s;
+    if (typeof s === 'string') { try { d = JSON.parse(s); } catch (e) { d = {}; } }
+    d = d || {};
+    var r = document.documentElement;
+    r.style.setProperty('--s0', d.s0 || 1);
+    r.style.setProperty('--s1', d.s1 || 1);
+    if (d.text2) r.style.setProperty('--text2', d.text2);
+    r.classList.toggle('pl-t2', !!d.text2);
+    r.classList.toggle('pl-up', !!d.upper);
+    if (orig) return orig(s);
+  };
+})();
+</script>
+`;
+
+function withCommon(html) {
+  const s = String(html);
+  if (s.includes('id="playout-common"')) return s;
+  const i = s.lastIndexOf('</body>');
+  return i === -1 ? s + COMMON_SNIPPET : s.slice(0, i) + COMMON_SNIPPET + s.slice(i);
+}
+
 /** Predloge iz aplikacije in lastne predloge prekopira v mapo predlog motorja (samo spremenjene). */
 function installTemplates(targetDir) {
   if (!targetDir) return;
@@ -236,7 +333,7 @@ function installTemplates(targetDir) {
   for (const { from, name } of list) {
     let data;
     try {
-      data = fs.readFileSync(from);
+      data = Buffer.from(withCommon(fs.readFileSync(from, 'utf8')), 'utf8');
     } catch {
       continue;
     }
@@ -250,4 +347,4 @@ function installTemplates(targetDir) {
 }
 
 module.exports = { CLOCK_MODES, TEMPLATES, FONTS, DEFAULT_BRAND, normBrand, normTitle, Titles, titleLabel, templateOf, installTemplates,
-  loadUserTemplates, allTemplates };
+  loadUserTemplates, allTemplates, withCommon };
