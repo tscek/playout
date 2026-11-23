@@ -600,3 +600,5 @@ body.resizing { cursor: row-resize; user-select: none; }
 .tb-grid td.k-image { color: #a8e6a1; }
 .tb-flag { width: 20px; height: auto; vertical-align: -3px; margin-right: 5px; border-radius: 2px; }
 .tb-input { width: 100%; box-sizing: border-box; border: 0; padding: 0; font: inherit; background: var(--panel-2); color: inherit; outline: none; min-width: 120px; }
+.tb-grid input, .tb-grid select { user-select: text; -webkit-user-select: text; }
+input, textarea, [contenteditable] { user-select: text; -webkit-user-select: text; }
