@@ -264,6 +264,7 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'playlist.setGroup': (a) => controller.setGroup(a.groupId, a.patch),
     'playlist.moveGroup': (a) => controller.moveGroup(a.groupId, a.index),
     'playlist.add': (a) => controller.addToGroup(a.groupId, a.mediaIds, a.index),
+    'playlist.addAction': (a) => controller.addActionEntry(a.groupId, a.actionId, a.index),
     'playlist.removeEntry': (a) => controller.removeEntry(a.entryId),
     'playlist.moveEntry': (a) => controller.moveEntry(a.entryId, a.groupId, a.index),
     'playlist.setEntry': (a) => controller.setEntry(a.entryId, a.patch),

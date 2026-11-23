@@ -177,6 +177,10 @@ class Controller extends EventEmitter {
       playlist: this.playlist.groups.map((g) => ({
         ...g,
         items: g.items.map((e) => {
+          if (e.kind === 'action') {
+            const label = this._actionLabel(e.actionId);
+            return { ...e, name: label || '? (akcija ne obstaja)', type: 'action', missing: !label };
+          }
           const it = libById.get(e.mediaId);
           return { ...e, name: it ? it.name : '?', type: it ? it.type : 'video', loop: !!(it && it.loop), missing: !it || !fileExists(it.path) };
         }),
@@ -974,6 +978,27 @@ class Controller extends EventEmitter {
     return added.length;
   }
 
+  /** Ime akcije ali preseta (preset:<id>); null, če ne obstaja. */
+  _actionLabel(id) {
+    if (!this.actions || typeof id !== 'string') return null;
+    if (id.startsWith('preset:')) {
+      const pid = id.slice(7);
+      return this.actions.presets().some((x) => x.id === pid) ? this.actions.presetLabel(pid) : null;
+    }
+    const a = this.actions.actions.find((x) => x.id === id);
+    return a ? a.name : null;
+  }
+
+  /** Akcija kot vnos v playlisti. */
+  async addActionEntry(groupId, actionId, index) {
+    this._group(groupId);
+    if (!this._actionLabel(actionId)) this._error('Akcija ne obstaja');
+    const e = this.playlist.addAction(groupId, actionId, index);
+    this._savePlaylist();
+    await this._rearm();
+    return e.id;
+  }
+
   async removeEntry(entryId) {
     this.playlist.removeEntry(entryId);
     this._savePlaylist();
@@ -1033,9 +1058,10 @@ class Controller extends EventEmitter {
 
   /** Prvi posnetek skupine v preview. */
   async cueGroup(groupId) {
-    const g = this._group(groupId);
-    if (!g.items.length) this._error('Skupina je prazna');
-    await this.loadPreview(g.items[0].mediaId, g.items[0].id);
+    this._group(groupId);
+    const first = this.playlist.firstMedia(groupId);
+    if (!first) this._error('Skupina nima posnetkov');
+    await this.loadPreview(first.mediaId, first.id);
   }
 
   _srcOf(entryId) {
@@ -1366,6 +1392,8 @@ class Controller extends EventEmitter {
     const offset = (seekFrames / fpsOf(this.settings.videoMode)) * 1000;
     this.program = { item: { ...item }, startedAt: Date.now() - offset, wallStart: Date.now(), src: src || null };
     this._armEntryActions();
+    this._armRundown();
+    this._scheduleImageEnd();
     this._armEntryTitle();
     this.times[PROGRAM_CHANNEL] = null;
     this.lastError = '';
@@ -1454,6 +1482,8 @@ class Controller extends EventEmitter {
     clearTimeout(this._endTimer);
     this._endPending = null;
     this.autoCuedId = null;
+    clearTimeout(this._afterTimer);
+    this._afterPending = null;
     this.program = { item: null, startedAt: 0, src: null };
     this.times[PROGRAM_CHANNEL] = null;
     this._armEntryTitle();
@@ -1525,7 +1555,7 @@ class Controller extends EventEmitter {
 
   /** Naslednji/prejšnji vnos playliste v preview (ali prvi, če v preview ni vnosa). */
   async stepPreviewEntry(dir) {
-    const flat = this.playlist.flat();
+    const flat = this.playlist.flatMedia();
     if (!flat.length) this._error('Playlista je prazna');
     const cur = this.preview.src ? flat.findIndex((x) => x.entry.id === this.preview.src.entryId) : -1;
     const i = cur === -1 ? 0 : Math.max(0, Math.min(flat.length - 1, cur + (dir > 0 ? 1 : -1)));
@@ -1845,10 +1875,8 @@ class Controller extends EventEmitter {
     const e = f.entry;
     if (e.startAction) this._runAction(e.startAction, `začetek: ${p.item.name}`);
     if (!e.endAction) return;
-    const spec = this._spec(p.item, p.src);
-    if (spec.loop) return; // zanka se ne konča
+    if (this._spec(p.item, p.src).loop) return; // zanka se ne konča
     this._endPending = { entryId: e.id, actionId: e.endAction, lead: e.endLead || 0 };
-    this._scheduleImageEnd();
   }
 
   /**
@@ -1893,8 +1921,69 @@ class Controller extends EventEmitter {
     }
   }
 
+  /**
+   * Akcije v playlisti: tiste tik pred vnosom se sprožijo, ko gre vnos na program (če se še niso ob koncu
+   * prejšnjega), tiste tik za njim ob koncu vnosa ali ko gre z programa zaradi naslednjega.
+   */
+  _armRundown() {
+    clearTimeout(this._afterTimer);
+    this._afterPending = null;
+    const p = this.program;
+    if (!p.item || !p.src) return;
+    const { before, after } = this.playlist.actionsAround(p.src.entryId);
+    const fired = this._rundownFired || new Set();
+    for (const a of before) if (!fired.has(a.id)) this._fireEntryAction(a, `pred: ${p.item.name}`);
+    this._rundownFired = new Set();
+    if (after.length && !this._spec(p.item, p.src).loop) this._afterPending = { entryId: p.src.entryId, list: after };
+  }
+
+  _fireEntryAction(a, why) {
+    if (!this.actions) return;
+    if (!a.delay) {
+      this._runAction(a.actionId, why);
+      return;
+    }
+    const t = setTimeout(() => this._runAction(a.actionId, why), a.delay * 1000);
+    if (t.unref) t.unref();
+  }
+
+  _fireAfter() {
+    const pend = this._afterPending;
+    if (!pend) return;
+    this._afterPending = null;
+    clearTimeout(this._afterTimer);
+    const name = this.program.item ? this.program.item.name : '';
+    if (!this._rundownFired) this._rundownFired = new Set();
+    for (const a of pend.list) {
+      this._rundownFired.add(a.id);
+      this._fireEntryAction(a, `po: ${name}`);
+    }
+  }
+
+  _checkAfter() {
+    const pend = this._afterPending;
+    const p = this.program;
+    if (!p.item || !p.src || p.src.entryId !== pend.entryId || p.item.type === 'image') return;
+    const t = this.times[PROGRAM_CHANNEL];
+    if (!t || !t.total) return;
+    const end = this._spec(p.item, p.src).outSec || t.total;
+    if (t.elapsed >= end - 1 / fpsOf(this.settings.videoMode)) this._fireAfter();
+  }
+
+  /** Slika, ki gre sama naprej: akcije za njo ob izteku časa. Slika, ki se ustavi, jih sproži šele naslednji vnos. */
+  _scheduleAfterImage() {
+    clearTimeout(this._afterTimer);
+    const p = this.program;
+    if (!this._afterPending || !p.item || p.item.type !== 'image' || p.paused) return;
+    const spec = this._spec(p.item, p.src);
+    if (!['cut', 'mix'].includes(spec.end) || !spec.seconds) return;
+    const wait = Math.max(0, spec.seconds * 1000 - (Date.now() - p.startedAt));
+    this._afterTimer = setTimeout(() => this._fireAfter(), wait);
+  }
+
   /** Slika nima časa iz motorja: akcijo ob koncu sproži časovnik (upošteva premor). */
   _scheduleImageEnd() {
+    this._scheduleAfterImage();
     clearTimeout(this._endTimer);
     const p = this.program;
     const pend = this._endPending;
@@ -1989,6 +2078,7 @@ class Controller extends EventEmitter {
         p.pausedAt = Date.now();
         this._clearImageTimer();
         clearTimeout(this._endTimer);
+        clearTimeout(this._afterTimer);
       }
     } else {
       const v = this.preview;
@@ -2152,6 +2242,7 @@ class Controller extends EventEmitter {
     }
     this.times[ch] = { elapsed, total: typeof total === 'number' ? total : 0, fps: this.clipFps[ch] || 0 };
     if (ch === PROGRAM_CHANNEL && this._endPending) this._checkEndAction();
+    if (ch === PROGRAM_CHANNEL && this._afterPending) this._checkAfter();
     if (ch === PROGRAM_CHANNEL) this._checkFadeOut(elapsed, this.times[ch].total);
     const now = Date.now();
     if (now - this._timeEmitAt > 200) {

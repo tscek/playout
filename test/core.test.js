@@ -1201,3 +1201,74 @@ test('lastne predloge napisov iz mape', async () => {
     await engine.stop();
   }
 });
+
+test('akcije kot vnosi v playlisti (potek prireditve)', async () => {
+  const http = require('http');
+  const { ActionManager } = require('../main/actions');
+  const hits = [];
+  const srv = http.createServer((req, res) => { hits.push(req.url); res.end('ok'); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const url = (p) => `http://127.0.0.1:${srv.address().port}/${p}`;
+  const { ctl, engine, dir } = makeController();
+  const am = new ActionManager({ file: path.join(dir, 'actions.json') });
+  ctl.actions = am;
+  try {
+    const ax = am.saveAction({ name: 'X', steps: [{ type: 'http', url: url('x'), method: 'GET' }] });
+    const ay = am.saveAction({ name: 'Y', steps: [{ type: 'http', url: url('y'), method: 'GET' }] });
+    const az = am.saveAction({ name: 'Z', steps: [{ type: 'http', url: url('z'), method: 'GET' }] });
+    for (const n of ['v1.mp4', 'v2.mp4']) fs.writeFileSync(path.join(dir, n), 'x');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles([path.join(dir, 'v1.mp4'), path.join(dir, 'v2.mp4')]);
+    const g = ctl.playlist.groups[0];
+    await ctl.addToGroup(g.id, ctl.library.items.map((x) => x.id));
+    await ctl.addActionEntry(g.id, ax, 0);
+    await ctl.addActionEntry(g.id, ay, 2);
+    const zid = await ctl.addActionEntry(g.id, az, 3);
+    await ctl.setEntry(zid, { delay: 0.2 });
+    await assert.rejects(() => ctl.addActionEntry(g.id, 'ni-je'));
+    assert.deepStrictEqual(g.items.map((e) => e.kind || 'media'), ['action', 'media', 'action', 'action', 'media']);
+    const [, v1, , , v2] = g.items;
+    const st = ctl.getState().playlist[0].items;
+    assert.strictEqual(st[0].type, 'action');
+    assert.strictEqual(st[0].name, 'X');
+    assert.strictEqual(ctl.playlist.nextAfter(v1.id).entry.id, v2.id);
+    assert.strictEqual(ctl.playlist.firstMedia(g.id).id, v1.id);
+
+    // Shrani in naloži znova: akcije ostanejo.
+    const { Playlist } = require('../main/playlist');
+    const again = new Playlist(JSON.parse(JSON.stringify(ctl.playlist.toJSON())));
+    assert.strictEqual(again.groups[0].items[3].delay, 0.2);
+    assert.strictEqual(again.groups[0].items.length, 5);
+
+    await ctl.setGroup(g.id, { end: 'cut' });
+    await ctl.cueGroup(g.id);
+    assert.strictEqual(ctl.preview.src.entryId, v1.id);
+    await ctl.take('cut');
+    await waitFor(() => hits.includes('/x'));
+    assert.strictEqual(ctl.preview.src.entryId, v2.id); // akcije se preskočijo
+    assert.ok(!hits.includes('/y'));
+    ctl._onOsc({ address: '/channel/1/stage/layer/10/foreground/file/time', args: [9.99, 10] });
+    await waitFor(() => hits.includes('/y'));
+    assert.ok(!hits.includes('/z'));
+    await waitFor(() => hits.includes('/z'), 2000);
+    hits.length = 0;
+    await ctl.take('cut'); // v2: Y in Z sta se že sprožili
+    await new Promise((r) => setTimeout(r, 400));
+    assert.deepStrictEqual(hits, []);
+
+    // Skok nazaj na v1 brez konca: X se sproži znova; Y ob zamenjavi z naslednjim (v2).
+    await ctl.loadPreview(v1.mediaId, v1.id);
+    await ctl.take('cut');
+    await waitFor(() => hits.includes('/x'));
+    await ctl.take('cut');
+    await waitFor(() => hits.includes('/y'));
+    await waitFor(() => hits.includes('/z'), 2000);
+    assert.deepStrictEqual(ctl.playlist.flatMedia().map((x) => x.entry.id), [v1.id, v2.id]);
+  } finally {
+    await am.stop();
+    await engine.stop();
+    srv.closeAllConnections();
+    srv.close();
+  }
+});

@@ -222,7 +222,14 @@ function renderPlaylist() {
       if (e.id === pgmE) b.classList.add('pgm');
       if (e.id === pvwE) b.classList.add('pvw');
       if (e.missing) b.classList.add('missing');
-      b.append(el('span', 'n', String(n)), el('span', 'ty', { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK' }[e.type] || ''), el('span', 'nm', e.name));
+      b.append(el('span', 'n', String(n)), el('span', 'ty', { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK', action: 'AKCIJA' }[e.type] || ''), el('span', 'nm', e.name + (e.delay ? `  +${e.delay} s` : '')));
+      if (e.kind === 'action') {
+        b.classList.add('act');
+        b.title = 'Klik sproži akcijo zdaj';
+        b.onclick = () => run('actions.run', { id: e.actionId });
+        gd.append(b);
+        continue;
+      }
       b.onclick = () => {
         if (previewMode()) run('preview.load', { id: e.mediaId, entryId: e.id });
         else run('program.direct', { id: e.mediaId, kind: state.settings.directTake || 'cut', entryId: e.id });

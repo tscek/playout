@@ -192,6 +192,11 @@ body { display: flex; flex-direction: column; }
 .type.video { color: #8ab4ff; }
 .type.image { color: #a8e6a1; }
 .type.audio { color: #f7c66b; }
+.type.action { color: #e8a0ff; }
+.group-list li.act { background: rgba(200, 120, 255, 0.07); }
+.group-list li.act .name { font-style: italic; }
+.act-delay { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; color: #bbb; margin-left: auto; }
+.group-list .act-delay input { width: 54px; min-width: 0; padding: 2px 4px; height: auto; }
 .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-btn {
   background: transparent;

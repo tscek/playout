@@ -29,7 +29,22 @@ function optFade(v) {
   return Math.max(0, Math.min(10, Math.round(n * 100) / 100));
 }
 
+/** Vnos z akcijo (ATEM, PTZ, XR18 ...): traja 0 s, sproži se, ko playlista pride do njega. */
+function normActionEntry(e) {
+  return {
+    id: e.id,
+    kind: 'action',
+    mediaId: null,
+    actionId: e.actionId,
+    delay: Math.max(0, Math.min(3600, optSeconds(e.delay) || 0)), // koliko sekund pozneje
+    layers: [],
+  };
+}
+
+const isAction = (e) => !!(e && e.kind === 'action');
+
 function normEntry(e) {
+  if (e && (e.kind === 'action' || (!e.mediaId && typeof e.actionId === 'string'))) return normActionEntry(e);
   return {
     id: e.id,
     mediaId: e.mediaId,
@@ -117,7 +132,7 @@ function normalize(data) {
       kenBurns: !!g.kenBurns, // slike v skupini počasi povečuje/pomanjšuje
       blur: !!g.blur, // slike brez lastnega prileganja dobijo zamegljeno ozadje
       collapsed: !!g.collapsed,
-      items: (Array.isArray(g.items) ? g.items : []).filter((e) => e && e.id && e.mediaId).map(normEntry),
+      items: (Array.isArray(g.items) ? g.items : []).filter((e) => e && e.id && (e.mediaId || (typeof e.actionId === 'string' && e.actionId))).map(normEntry),
     }));
   if (!out.length) out.push({ ...makeGroup('Playlist') });
   return { groups: out };
@@ -192,11 +207,26 @@ class Playlist {
     return entries;
   }
 
+  /** Doda akcijo kot vnos v skupino (na konec ali na index). */
+  addAction(groupId, actionId, index) {
+    const g = this.group(groupId);
+    if (!g || typeof actionId !== 'string' || !actionId) return null;
+    const e = normActionEntry({ id: newId(), actionId });
+    const at = Number.isInteger(index) ? Math.max(0, Math.min(g.items.length, index)) : g.items.length;
+    g.items.splice(at, 0, e);
+    return e;
+  }
+
   /** Nastavitve vnosa: end, seconds, inSec, outSec (null = privzeto). */
   setEntry(entryId, patch) {
     const f = this.findEntry(entryId);
     if (!f) return null;
     const e = f.entry;
+    if (isAction(e)) {
+      if (typeof patch.actionId === 'string' && patch.actionId) e.actionId = patch.actionId;
+      if ('delay' in patch) e.delay = Math.max(0, Math.min(3600, optSeconds(patch.delay) || 0));
+      return e;
+    }
     if ('end' in patch) e.end = ENTRY_ENDS.includes(patch.end) ? patch.end : null;
     if ('seconds' in patch) e.seconds = optSeconds(patch.seconds, 1);
     if ('inSec' in patch) e.inSec = optSeconds(patch.inSec);
@@ -285,34 +315,72 @@ class Playlist {
   /** Ko je posnetek odstranjen iz knjižnice, ga odstranimo tudi iz playliste. */
   removeMedia(mediaId) {
     for (const g of this.groups) {
-      g.items = g.items.filter((e) => e.mediaId !== mediaId);
+      g.items = g.items.filter((e) => isAction(e) || e.mediaId !== mediaId);
       for (const e of g.items) e.layers = e.layers.filter((l) => l.mediaId !== mediaId);
     }
   }
 
   /**
-   * Naslednji vnos po danem: naslednji v skupini; na koncu skupine prvi (če se skupina ponavlja)
-   * ali prvi vnos naslednje nepraznne skupine. Vrne { group, entry } ali null.
+   * Naslednji posnetek po danem vnosu (akcije preskoči): naslednji v skupini; na koncu skupine prvi
+   * (če se skupina ponavlja) ali prvi posnetek naslednje skupine. Vrne { group, entry } ali null.
    */
   nextAfter(entryId) {
     const f = this.findEntry(entryId);
     if (!f) return null;
     const { group, index } = f;
-    if (index + 1 < group.items.length) return { group, entry: group.items[index + 1] };
-    if (group.loop) return { group, entry: group.items[0] };
+    const media = (g, from) => g.items.slice(from).find((e) => !isAction(e));
+    const inGroup = media(group, index + 1);
+    if (inGroup) return { group, entry: inGroup };
+    if (group.loop) {
+      const first = media(group, 0);
+      return first ? { group, entry: first } : null;
+    }
     const gi = this.groups.indexOf(group);
     for (let i = gi + 1; i < this.groups.length; i++) {
-      if (this.groups[i].items.length) return { group: this.groups[i], entry: this.groups[i].items[0] };
+      const e = media(this.groups[i], 0);
+      if (e) return { group: this.groups[i], entry: e };
     }
     return null;
   }
 
-  /** Vsi vnosi po vrsti (za puščici gor/dol). */
+  /** Prvi posnetek skupine (brez akcij). */
+  firstMedia(groupId) {
+    const g = this.group(groupId);
+    return g ? g.items.find((e) => !isAction(e)) || null : null;
+  }
+
+  /**
+   * Akcije tik pred in tik za vnosom (zaporedne, preko meja skupin, do prvega posnetka).
+   * Na koncu skupine, ki se ponavlja, se za vnosom nadaljuje na začetku iste skupine.
+   */
+  actionsAround(entryId) {
+    const f = this.findEntry(entryId);
+    if (!f) return { before: [], after: [] };
+    const flat = this.flat();
+    const at = flat.findIndex((x) => x.entry.id === entryId);
+    const before = [];
+    for (let i = at - 1; i >= 0 && isAction(flat[i].entry) && (!f.group.loop || flat[i].group === f.group); i--) before.unshift(flat[i].entry);
+    const after = [];
+    if (f.group.loop) {
+      const items = f.group.items;
+      for (let k = 1; k < items.length && isAction(items[(f.index + k) % items.length]); k++) after.push(items[(f.index + k) % items.length]);
+    } else {
+      for (let i = at + 1; i < flat.length && isAction(flat[i].entry); i++) after.push(flat[i].entry);
+    }
+    return { before, after };
+  }
+
+  /** Vsi vnosi po vrsti (tudi akcije). */
   flat() {
     const out = [];
     for (const group of this.groups) for (const entry of group.items) out.push({ group, entry });
     return out;
   }
+
+  /** Samo posnetki po vrsti (za puščici gor/dol). */
+  flatMedia() {
+    return this.flat().filter((x) => !isAction(x.entry));
+  }
 }
 
-module.exports = { Playlist, DEFAULT_IMAGE_SECONDS, GROUP_ENDS, ENTRY_ENDS, optSeconds, BLENDS, COLOR_KEYS, MAX_LAYERS };
+module.exports = { Playlist, isAction, DEFAULT_IMAGE_SECONDS, GROUP_ENDS, ENTRY_ENDS, optSeconds, BLENDS, COLOR_KEYS, MAX_LAYERS };

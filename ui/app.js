@@ -133,7 +133,7 @@ function renderEngine() {
     .join('\n');
 }
 
-const TYPE_LABEL = { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK' };
+const TYPE_LABEL = { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK', action: 'AKCIJA' };
 
 // Mediji: drevo projektne mape, filter in razvrščanje (shrani se v tem brskalniku).
 const lsGet = (k, d) => {
@@ -481,7 +481,7 @@ function onGroupDrop(ev, group, index) {
 function renderPlaylist() {
   const box = $('#groups');
   const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest('#groups');
-  if (focused && ['text', 'number'].includes(document.activeElement.type)) return; // ne motimo urejanja
+  if (focused && (['text', 'number'].includes(document.activeElement.type) || document.activeElement.classList.contains('add-act'))) return; // ne motimo urejanja
   box.innerHTML = '';
   const pgmEntry = state.program && state.program.src && state.program.src.entryId;
   const pvwEntry = state.preview && state.preview.src && state.preview.src.entryId;
@@ -561,7 +561,7 @@ function renderPlaylist() {
       ev.stopPropagation();
       if (!g.items.length) return;
       if (previewMode()) run('playlist.cueGroup', { groupId: g.id });
-      else onEntryClick(g.items[0]);
+      else if (g.items.find((x) => x.kind !== 'action')) onEntryClick(g.items.find((x) => x.kind !== 'action'));
     };
     const up = el('button', 'item-btn', '▲');
     up.title = 'Skupino premakni gor';
@@ -574,7 +574,20 @@ function renderPlaylist() {
       if (g.items.length && !confirm(`Izbrišem skupino "${g.name}"?`)) return;
       run('playlist.removeGroup', { groupId: g.id });
     };
-    head.append(cue, up, del);
+    const addAct = el('button', 'item-btn', '+ akcija');
+    addAct.title = 'Dodaj akcijo (ATEM, PTZ, XR18 ...) kot vnos: sproži se, ko playlista pride do nje';
+    addAct.onclick = (ev) => {
+      ev.stopPropagation();
+      const sel = actionSelect('');
+      sel.classList.add('add-act');
+      sel.onclick = (e2) => e2.stopPropagation();
+      sel.onchange = () => { if (sel.value) run('playlist.addAction', { groupId: g.id, actionId: sel.value }); else render(); };
+      sel.onblur = () => setTimeout(render, 0);
+      addAct.replaceWith(sel);
+      sel.focus();
+      if (sel.showPicker) try { sel.showPicker(); } catch { /* ni podprto */ }
+    };
+    head.append(addAct, cue, up, del);
     wrap.append(head);
 
     const ul = el('ul', 'group-list');
@@ -607,6 +620,41 @@ function renderPlaylist() {
 
       const type = el('span', `type ${e.type}`, TYPE_LABEL[e.type] || e.type);
       li.append(el('span', 'num', String(i + 1)), type, el('span', 'name', e.name + (e.loop ? '  ⟲' : '')));
+      if (e.kind === 'action') {
+        li.classList.add('act');
+        li.title = 'Akcija se sproži, ko playlista pride do nje: za posnetkom ob njegovem koncu (ali ko gre naslednji na program), na začetku pred prvim posnetkom.';
+        const dl = el('label', 'act-delay');
+        dl.title = 'Koliko sekund pozneje se sproži';
+        const n = el('input');
+        n.type = 'number';
+        n.min = 0;
+        n.max = 3600;
+        n.step = 0.5;
+        n.value = e.delay || 0;
+        n.onclick = (ev) => ev.stopPropagation();
+        n.onchange = () => run('playlist.setEntry', { entryId: e.id, patch: { delay: Number(n.value) || 0 } });
+        n.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === 'Escape') n.blur(); };
+        n.onblur = () => setTimeout(render, 0);
+        dl.append(document.createTextNode('+'), n, document.createTextNode('s'));
+        const go = el('button', 'item-btn', '▶');
+        go.title = 'Sproži zdaj';
+        go.disabled = e.missing;
+        go.onclick = (ev) => { ev.stopPropagation(); run('actions.run', { id: e.actionId }); };
+        const mv = (txt, title, to, dis) => {
+          const b = el('button', 'item-btn', txt);
+          b.title = title;
+          b.disabled = dis;
+          b.onclick = (ev) => { ev.stopPropagation(); run('playlist.moveEntry', { entryId: e.id, groupId: g.id, index: to }); };
+          return b;
+        };
+        const x = el('button', 'item-btn', '✕');
+        x.title = 'Odstrani iz skupine';
+        x.onclick = (ev) => { ev.stopPropagation(); run('playlist.removeEntry', { entryId: e.id }); };
+        li.append(dl, go, mv('▲', 'Gor', i - 1, i === 0), mv('▼', 'Dol', i + 1, i === g.items.length - 1), x);
+        li.onclick = (ev) => { ev.stopPropagation(); targetGroupId = g.id; };
+        ul.append(li);
+        return;
+      }
       if (previewMode() && e.id === pvwEntry) {
         li.append(el('span', 'badge pvw', 'PVW'));
         if (state.preview.autoFollow) li.append(el('span', 'badge next', 'SLEDI'));
@@ -652,6 +700,32 @@ function renderPlaylist() {
   });
 }
 
+/** Izbira akcije ali preseta (vrednost: id akcije ali preset:<id>). */
+function actionSelect(value) {
+  const acts = (state.actions && state.actions.actions) || [];
+  const sel = el('select', 'mini-select');
+  sel.add(new Option('—', ''));
+  const og = document.createElement('optgroup');
+  og.label = 'Akcije';
+  for (const a of acts) og.append(new Option(typeof actionName === 'function' ? actionName(a) : a.name, a.id));
+  if (acts.length) sel.append(og);
+  let pg = null;
+  let last = '';
+  for (const p of (state.actions && state.actions.presets) || []) {
+    const g = `${p.group} · ${p.kind}`;
+    if (g !== last) {
+      pg = document.createElement('optgroup');
+      pg.label = `Preset: ${g}`;
+      sel.append(pg);
+      last = g;
+    }
+    pg.append(new Option(p.label, `preset:${p.id}`));
+  }
+  if (value && ![...sel.options].some((o) => o.value === value)) sel.add(new Option(value.startsWith('preset:') ? '(preset ni na voljo)' : '(izbrisana akcija)', value));
+  sel.value = value || '';
+  return sel;
+}
+
 function entryEditor(e, g) {
   const box = el('div', 'entry-edit');
   box.onclick = (ev) => ev.stopPropagation();
@@ -691,30 +765,7 @@ function entryEditor(e, g) {
   );
 
   // Akcije ob začetku in koncu vnosa
-  const acts = (state.actions && state.actions.actions) || [];
-  const actSel = (value) => {
-    const sel = el('select', 'mini-select');
-    sel.add(new Option('—', ''));
-    const og = document.createElement('optgroup');
-    og.label = 'Akcije';
-    for (const a of acts) og.append(new Option(typeof actionName === 'function' ? actionName(a) : a.name, a.id));
-    if (acts.length) sel.append(og);
-    let pg = null;
-    let last = '';
-    for (const p of (state.actions && state.actions.presets) || []) {
-      const g = `${p.group} · ${p.kind}`;
-      if (g !== last) {
-        pg = document.createElement('optgroup');
-        pg.label = `Preset: ${g}`;
-        sel.append(pg);
-        last = g;
-      }
-      pg.append(new Option(p.label, `preset:${p.id}`));
-    }
-    if (value && ![...sel.options].some((o) => o.value === value)) sel.add(new Option(value.startsWith('preset:') ? '(preset ni na voljo)' : '(izbrisana akcija)', value));
-    sel.value = value || '';
-    return sel;
-  };
+  const actSel = actionSelect;
   const startL = el('label', 'group-opt');
   const startSel = actSel(e.startAction);
   startSel.onchange = () => set({ startAction: startSel.value || null });
@@ -1346,7 +1397,7 @@ function stepPreview(dir) {
   if (!state) return;
   const curEntry = previewMode() ? state.preview && state.preview.src && state.preview.src.entryId : selectedEntryId;
   if (curEntry) {
-    const flat = state.playlist.flatMap((g) => g.items);
+    const flat = state.playlist.flatMap((g) => g.items).filter((e) => e.kind !== 'action');
     let i = flat.findIndex((e) => e.id === curEntry);
     if (i !== -1) {
       i = Math.max(0, Math.min(flat.length - 1, i + dir));
