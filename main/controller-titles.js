@@ -109,6 +109,7 @@ const methods = {
 
   /** Podatki za predlogo: celostna podoba projekta + nastavitve napisa. */
   _titleData(t) {
+    if (this.tables && !String(t.id).startsWith('row:') && this._hasVars(t)) t = this._varTitle(t);
     const b = this.project.brand;
     const logoId = t.logo === null ? b.logo : t.logo;
     let logo = '';
@@ -188,8 +189,8 @@ const methods = {
     // samo položaj/velikost: brez ponovnega pošiljanja besedila (drsnik v živo)
     const geom = Object.keys(patch).every((k) => ['posX', 'posY', 'size'].includes(k));
     await this._refreshTitle(t, t.template !== old, geom);
-    // osebe iz tabel, ki uporabljajo ta napis kot vzorec, se osvežijo
-    if (this.tables) for (const tb of this.tables.tables) if (tb.styleTitleId === id) await this._refreshRows(tb.id);
+    // osebe iz tabel, ki uporabljajo ta napis, se osvežijo
+    if (this.tables) for (const tb of this.tables.tables) if (tb.titleId === id) await this._refreshRows(tb.id);
   },
 
   async removeTitle(id) {

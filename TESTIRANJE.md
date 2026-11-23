@@ -1,3 +1,26 @@
+# Test v0.18.0: napisi s podatki iz tabel {Tabela.Stolpec}, preklapljanje oseb pod CUT/AUTO, napisi v playlisti
+
+Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.17.0 (opis spodaj). Tabele iz v0.17 se pretvorijo same:
+vsaka dobi svoj napis v zavihku Napisi (z enakim izgledom kot prej).
+
+1. **Spremenljivke v napisih**: v katerokoli polje napisa lahko napišeš `{Tabela.Stolpec}`, npr. `{Govorniki.Ime}` in
+   `{Govorniki.Funkcija}, {Govorniki.Klub}`. V urejevalniku napisa so pod polji gumbi s stolpci vseh tabel: klikni polje,
+   nato gumb, in spremenljivka se vstavi. `{Govorniki.#}` je številka osebe. Zastava in slika osebe prideta sami.
+   Napis pokaže pripravljeno osebo, drug napis z istimi spremenljivkami pa trenutno (zadnjo na programu).
+   Preimenovanje tabele ali stolpca popravi spremenljivke v napisih.
+2. **Nova tabela dobi svoj napis.** V *Uredi tabelo* zgoraj izbereš **Napis za GO** (lahko jih imaš več in med njimi
+   preklapljaš), **+ nov napis** naredi še enega, **Uredi napis** ga odpre v zavihku Napisi (predloga, barve, velikost).
+3. **Razdelek NAPIS pod CUT/AUTO**: zgoraj izbereš, kaj preklapljaš: *Seznam Čez program* ali *Osebe: ime tabele*.
+   Pri tabeli vidiš napis, ki se uporabi (lahko ga zamenjaš), in **2 / 12** = katera oseba od koliko.
+   ▶ pripravi naslednjo osebo (za tisto, ki je na programu) v preview, GO jo da na program z animacijo.
+   Možnost **◀ ▶ takoj zamenja osebo na programu** (v Uredi tabelo): puščica zamenja ime kar na programu, brez izhoda in prihoda.
+   Enako je na tablici.
+4. **Napis v playlisti**: v glavi skupine **+ napis**, izberi napis ali *Tabela: naslednja oseba / trenutna oseba*.
+   Vnos se sproži kot akcija (pred posnetkom ob začetku, za posnetkom ob koncu). Nastavitve v vrstici:
+   oseba (naslednja, trenutna ali določena), **sam** (gre na program sam) ali **pripravi za GO** (čaka v razdelku NAPIS),
+   +s (zamik), dol po s (0 = ne gre dol sam), **do nasl.** (gre dol, ko gre na program naslednji posnetek). ▶ ga sproži takoj.
+   Napis kot plast posnetka (Vnos → napis s tem vnosom) deluje kot prej.
+
 # Test v0.17.0: osebe (tabele za napise), GO in DOL poleg CUT/AUTO
 
 Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.16.0 (opis spodaj).

@@ -197,7 +197,7 @@ function normTitle(t) {
     template: tpl.id !== x.template && typeof x.template === 'string' && /^user-[a-z0-9-]+$/.test(x.template) ? x.template : tpl.id,
     f0: str(x.f0),
     f1: str(x.f1, 2000),
-    f2: str(x.f2, 60),
+    f2: str(x.f2, 120),
     align: tpl.aligns.includes(x.align) ? x.align : tpl.aligns[0] || '',
     bg: isColor(x.bg) ? x.bg : null,
     accent: isColor(x.accent) ? x.accent : null,

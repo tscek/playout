@@ -4,6 +4,7 @@
 
 let selTitleId = null;
 let titleEditKey = '';
+let titleVarField = 'f0';
 let leftTab = lsGet('leftTab', 'media');
 
 const ALIGN_LABEL = { left: 'levo', center: 'sredina', right: 'desno', tl: 'levo zgoraj', tr: 'desno zgoraj', bl: 'levo spodaj', br: 'desno spodaj' };
@@ -184,7 +185,8 @@ function renderTitleEditor() {
   }
   box.classList.remove('hidden');
   const on = titlesSt().onAir.includes(t.id);
-  const key = `${t.id}|${t.template}|${on}|${imageOptions().length}|${t.mode}`;
+  const tabsKey = ((state.tables && state.tables.tables) || []).map((x) => x.name + x.columns.map((c) => c.name).join()).join('|');
+  const key = `${t.id}|${t.template}|${on}|${imageOptions().length}|${t.mode}|${tabsKey}`;
   if (key !== titleEditKey) {
     titleEditKey = key;
     buildTitleEditor(box, t, on);
@@ -224,7 +226,7 @@ function buildTitleEditor(box, t, on) {
     const inp = document.createElement('input');
     inp.className = 'text-input';
     inp.dataset.key = f.key;
-    inp.maxLength = f.key === 'f2' ? 60 : f.key === 'f1' ? 2000 : 200;
+    inp.maxLength = f.key === 'f2' ? 120 : f.key === 'f1' ? 2000 : 200;
     let timer = null;
     const send = () => titlePatch(t.id, { [f.key]: inp.value });
     if (on) {
@@ -238,8 +240,10 @@ function buildTitleEditor(box, t, on) {
     inp.onkeydown = (ev) => {
       if (ev.key === 'Enter') inp.blur();
     };
+    inp.onfocus = () => { titleVarField = f.key; };
     row(f.label, inp);
   }
+  if (!tpl.clock && tpl.fields.length) varChips(box, t, on);
 
   if (tpl.clock) {
     const m = document.createElement('select');
@@ -493,3 +497,40 @@ for (const k of ['bg', 'accent', 'text']) {
 }
 $('#brand-font').onchange = () => run('brand.set', { patch: { font: $('#brand-font').value } });
 $('#brand-font').addEventListener('keydown', (ev) => ev.stopPropagation());
+
+/** Gumbi za vstavljanje {Tabela.Stolpec} v polje napisa (zadnje izbrano polje). */
+function varChips(box, t, on) {
+  const tabs = (state.tables && state.tables.tables) || [];
+  const wrap = el('div', 'var-chips');
+  wrap.append(el('div', 'hint-inline', tabs.length
+    ? 'Podatki iz tabele (zavihek Osebe): klikni, da vstaviš v izbrano polje. Napis pokaže pripravljeno oziroma trenutno osebo.'
+    : 'Podatke iz tabele oseb lahko vstaviš kot {Tabela.Stolpec}, ko narediš tabelo v zavihku Osebe.'));
+  for (const tb of tabs) {
+    const line = el('div', 'var-line');
+    line.append(el('span', 'var-table', tb.name));
+    const cols = tb.columns.filter((c) => c.kind === 'text' || c.kind === 'flag').map((c) => c.name).concat('#');
+    for (const name of cols) {
+      const b = el('button', 'item-btn', name === '#' ? 'št.' : name);
+      b.type = 'button';
+      b.title = `Vstavi {${tb.name}.${name}}`;
+      b.onmousedown = (ev) => ev.preventDefault();
+      b.onclick = () => {
+        const inp = box.querySelector(`input[data-key="${titleVarField}"]`) || box.querySelector('input[data-key="f0"]');
+        if (!inp) return;
+        const v = `{${tb.name}.${name}}`;
+        const a = inp.selectionStart ?? inp.value.length;
+        const z = inp.selectionEnd ?? inp.value.length;
+        const before = inp.value.slice(0, a);
+        const sep = before && !/\s$/.test(before) ? ' ' : '';
+        inp.value = `${before}${sep}${v}${inp.value.slice(z)}`;
+        const pos = a + sep.length + v.length;
+        inp.focus();
+        inp.setSelectionRange(pos, pos);
+        titlePatch(t.id, { [inp.dataset.key]: inp.value });
+      };
+      line.append(b);
+    }
+    wrap.append(line);
+  }
+  box.append(wrap);
+}

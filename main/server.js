@@ -14,7 +14,7 @@ const LAN_PORT = 8090;
 /** Ukazi, ki jih sme poslati tablica (nič, kar briše datoteke ali spreminja nastavitve računalnika). */
 const REMOTE_ACTIONS = new Set([
   'state.get', 'take.cut', 'take.auto', 'preview.load', 'preview.clear', 'program.clear', 'program.panic', 'program.direct',
-  'playlist.cueGroup', 'seek', 'step', 'playPause', 'media.volume', 'media.mute', 'actions.run', 'ovl.go', 'ovl.off', 'ovl.next', 'ovl.step', 'tables.cue', 'tables.uncue', 'tables.active',
+  'playlist.cueGroup', 'seek', 'step', 'playPause', 'media.volume', 'media.mute', 'actions.run', 'ovl.go', 'ovl.off', 'ovl.next', 'ovl.step', 'ovl.source', 'ovl.tableTitle', 'playlist.fireEntry', 'tables.cue', 'tables.uncue', 'tables.active',
   'titles.on', 'titles.off', 'titles.toggle', 'titles.allOff', 'titles.preview', 'remote.command', 'atem.run', 'device.run', 'ptz.move',
 ]);
 
@@ -274,6 +274,8 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'playlist.moveGroup': (a) => controller.moveGroup(a.groupId, a.index),
     'playlist.add': (a) => controller.addToGroup(a.groupId, a.mediaIds, a.index),
     'playlist.addAction': (a) => controller.addActionEntry(a.groupId, a.actionId, a.index),
+    'playlist.addTitle': (a) => controller.addTitleEntry(a.groupId, a.spec, a.index),
+    'playlist.fireEntry': (a) => controller.fireTitleEntry(a.entryId),
     'ovl.add': (a) => controller.addOverlay(a.spec, a.index),
     'ovl.set': (a) => controller.setOverlay(a.id, a.patch),
     'ovl.remove': (a) => controller.removeOverlay(a.id),
@@ -282,6 +284,9 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'ovl.go': (a) => controller.overlayGo((a && a.id) || null),
     'ovl.off': (a) => controller.overlayOff((a && a.id) || null),
     'ovl.step': (a) => controller.overlayStep(a.dir),
+    'ovl.source': (a) => controller.setGfxSource(a.src),
+    'ovl.tableTitle': (a) => controller.setTable(a.id, { titleId: a.titleId || null }),
+    'tables.addTitle': (a) => controller.addTableTitle(a.id),
     'tables.add': (a) => controller.addTable(a && a.name),
     'tables.remove': (a) => controller.removeTable(a.id),
     'tables.active': (a) => controller.setActiveTable(a.id),

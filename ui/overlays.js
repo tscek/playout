@@ -104,13 +104,18 @@ function renderGfxBox() {
   if (!$('#gfx-box')) return;
   const S = ovlSt();
   const hk = (state.settings && state.settings.hotkeys) || {};
-  const nx = S.items.find((o) => o.id === S.next);
+  const nx = S.src === 'list' ? S.items.find((o) => o.id === S.next) : null;
   const row = S.nextRow;
+  const TB = S.table;
+  renderGfxSource(S, TB);
   const box = $('#gfx-next');
   box.innerHTML = '';
   if (row) {
-    box.append(document.createTextNode(`Oseba ${row.num}: `), el('b', '', row.name));
-    box.title = `${row.name} (tabela ${row.table})`;
+    box.append(document.createTextNode(row.kind === 'title' ? 'Napis: ' : `Oseba ${row.num}: `), el('b', '', row.name));
+    box.title = row.table ? `${row.name} (tabela ${row.table})` : row.name;
+  } else if (TB) {
+    box.textContent = TB.total ? (TB.current ? `Zdaj: ${TB.current.name} · ▶ pripravi naslednjo` : '▶ ali številka pripravi osebo') : 'Tabela je prazna (zavihek Osebe)';
+    box.title = '';
   } else if (nx) {
     box.append(document.createTextNode(`Naslednji ${S.items.indexOf(nx) + 1}: `), el('b', '', nx.name));
     box.title = nx.name;
@@ -132,6 +137,41 @@ function renderGfxBox() {
     d.onclick = () => run('ovl.off', { id: o.id });
     onBox.append(d);
   }
+}
+
+/** Izbira vira (seznam / tabela), napis tabele in položaj osebe "3 / 12". */
+function renderGfxSource(S, TB) {
+  const src = $('#gfx-src');
+  const tabs = (state.tables && state.tables.tables) || [];
+  const sig = tabs.map((t) => `${t.id}:${t.name}`).join('|');
+  if (src.dataset.sig !== sig) {
+    src.dataset.sig = sig;
+    src.innerHTML = '';
+    src.add(new Option('Seznam Čez program', 'list'));
+    for (const t of tabs) src.add(new Option(`Osebe: ${t.name}`, t.id));
+    src.onchange = () => run('ovl.source', { src: src.value });
+  }
+  if (document.activeElement !== src) src.value = S.src || 'list';
+  src.classList.toggle('hidden', !tabs.length);
+  $('#gfx-tbl').classList.toggle('hidden', !TB);
+  if (!TB) return;
+  const sel = $('#gfx-title');
+  const items = ((state.titles && state.titles.items) || []).filter((x) => !(tplOf(x.template) || {}).clock);
+  const tsig = `${TB.tableId}|${items.map((x) => `${x.id}:${x.label}`).join('|')}`;
+  if (sel.dataset.sig !== tsig) {
+    sel.dataset.sig = tsig;
+    sel.innerHTML = '';
+    sel.add(new Option('(privzet napis)', ''));
+    for (const x of items) sel.add(new Option(x.label, x.id));
+    sel.onchange = () => run('ovl.tableTitle', { id: TB.tableId, titleId: sel.value });
+  }
+  if (document.activeElement !== sel) sel.value = TB.titleId || '';
+  const p = TB.cued || TB.current;
+  const pos = $('#gfx-pos');
+  pos.textContent = `${p ? p.pos : '–'} / ${TB.total}`;
+  pos.title = TB.cued ? 'Pripravljena oseba / vseh oseb' : 'Trenutna oseba / vseh oseb';
+  pos.classList.toggle('cued', !!TB.cued);
+  pos.classList.toggle('live', !TB.cued && TB.onAir);
 }
 
 function ovlStep(dir) {

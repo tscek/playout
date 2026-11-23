@@ -61,6 +61,11 @@
           <div class="gfx-head"><span>NAPIS / GRAFIKA</span>
             <button class="tbtn" id="gfx-prev" title="Prejšnji v seznamu postane naslednji">◀</button>
             <button class="tbtn" id="gfx-nextb" title="Naslednji v seznamu">▶</button></div>
+          <select id="gfx-src" class="mini-select gfx-src" title="Kaj preklapljata ◀ ▶ in GO: seznam Čez program ali osebe iz tabele"></select>
+          <div class="gfx-tbl hidden" id="gfx-tbl">
+            <select id="gfx-title" class="mini-select" title="Napis, ki se uporabi za osebe iz te tabele"></select>
+            <span id="gfx-pos" class="gfx-pos"></span>
+          </div>
           <div class="gfx-next" id="gfx-next">Naslednji: —</div>
           <input id="gfx-num" class="text-input gfx-num" inputmode="numeric" placeholder="št. osebe + Enter" title="Številka osebe iz tabele (zavihek Osebe). Kadar okno nima izbranega polja, lahko številko kar vtipkaš.">
           <div class="gfx-btns">

@@ -1372,11 +1372,14 @@ test('tabela oseb: vzorec, zastava, slika, klic po številki, GO, kamera', async
     const photo = path.join(dir, 'janez.png');
     fs.writeFileSync(photo, 'x');
     ctl.addFiles([photo]);
-    const style = ctl.addTitle({ template: 'l3-crta', f0: 'Vzorec', s0: 1.2 });
     const tid = ctl.addTable('Govorniki');
-    await ctl.setTable(tid, { styleTitleId: style, map: { f0: '{Ime}', f1: '{Funkcija}, {Klub}' } });
-    const klub = ctl.addColumn(tid, 'Klub', 'text');
     const t = ctl.tables.get(tid);
+    assert.ok(t.titleId); // nova tabela dobi svoj napis s spremenljivkami
+    assert.strictEqual(ctl.titles.get(t.titleId).f0, '{Govorniki.Ime}');
+    const klub = ctl.addColumn(tid, 'Klub', 'text');
+    await ctl.setTitle(t.titleId, { template: 'l3-crta', s0: 1.2, f1: '{Govorniki.Funkcija}, {govorniki.Klub}' });
+    // navaden napis, ki uporablja trenutno osebo tabele
+    const info = ctl.addTitle({ template: 'klasicni', f0: 'Govori: {Govorniki.Ime}' });
     assert.deepStrictEqual(t.columns.map((c) => c.kind), ['text', 'text', 'flag', 'image', 'action', 'text']);
     // lepljenje iz Excela: Ime, Funkcija, Država, Slika, Kamera, Klub
     const paste = [['Janez Novak', 'trener', 'Slovenija', 'janez', 'kamera govornik', 'NK Lipa'], ['Mojca', '', 'HR', '', '', 'AK Lipa']];
@@ -1399,20 +1402,47 @@ test('tabela oseb: vzorec, zastava, slika, klic po številki, GO, kamera', async
     await waitFor(() => sent.some((c) => /^CG 1-6\d ADD/.test(c) && c.includes('Janez Novak')));
     assert.strictEqual(ctl.rowCued, null);
     assert.strictEqual(ctl.getState().overlays.live[0].name, 'Janez Novak');
+    assert.strictEqual(ctl.getState().overlays.src, tid);
+    assert.strictEqual(ctl.getState().overlays.table.current.name, 'Janez Novak');
+    await ctl.titleOn(info); // navaden napis na programu (ostane ob menjavi osebe)
+    await waitFor(() => sent.some((c) => /^CG 1-6\d ADD/.test(c) && c.includes('Govori: Janez Novak')));
 
     await assert.rejects(() => ctl.cueRow({ num: 2 })); // druga vrstica ima številko 10
     await ctl.cueRow({ num: 10 });
     await ctl.overlayGo(); // Mojca zamenja Janeza
     await waitFor(() => sent.some((c) => /^CG 1-6\d ADD/.test(c) && c.includes('Mojca') && c.includes('hr.svg') && c.includes('AK Lipa')));
     await waitFor(() => ctl.getState().overlays.live.length === 1 && ctl.getState().overlays.live[0].name === 'Mojca', 3000);
+    assert.ok(sent.some((c) => /^CG 1-6\d UPDATE/.test(c) && c.includes('Govori: Mojca'))); // napis s spremenljivko sledi osebi
+    await ctl.titleOff(info);
+
+    // takoj zamenjaj: ◀ zamenja osebo kar na programu (UPDATE na isti plasti, brez ADD)
+    await ctl.setTable(tid, { liveUpdate: true });
+    const m = sent.length;
+    await ctl.overlayStep(-1);
+    await waitFor(() => sent.slice(m).some((c) => /^CG 1-6\d UPDATE/.test(c) && c.includes('Janez Novak')));
+    assert.ok(!sent.slice(m).some((c) => /^CG 1-6\d (ADD|STOP)/.test(c)));
+    assert.strictEqual(ctl.getState().overlays.live.length, 1);
+    assert.strictEqual(ctl.getState().overlays.live[0].name, 'Janez Novak');
+    await ctl.overlayStep(1);
+    assert.strictEqual(ctl.getState().overlays.live[0].name, 'Mojca');
+    await ctl.setTable(tid, { liveUpdate: false });
+
+    // preimenovanje stolpca in tabele popravi sklice v napisih
+    await ctl.setColumn(tid, klub, { name: 'Društvo' });
+    await ctl.setTable(tid, { name: 'Gostje' });
+    assert.strictEqual(ctl.titles.get(t.titleId).f1, '{Gostje.Funkcija}, {Gostje.Društvo}');
+    assert.strictEqual(ctl.titles.get(info).f0, 'Govori: {Gostje.Ime}');
 
     // Popravek podatka v živo se pokaže na programu.
     const n = sent.length;
     await ctl.setCells(tid, [{ row: 1, col: 1, value: 'sodnica' }]);
     assert.ok(sent.slice(n).some((c) => /^CG 1-6\d UPDATE/.test(c) && c.includes('sodnica')));
 
-    await ctl.overlayStep(-1); // puščica: brez pripravljene osebe gre na seznam ali tabelo
-    assert.ok(ctl.rowCued);
+    await ctl.overlayStep(-1); // puščica: od osebe na programu (Mojca) na prejšnjo
+    assert.strictEqual(ctl.getState().overlays.nextRow.name, 'Janez Novak');
+    await ctl.setGfxSource('list');
+    assert.strictEqual(ctl.rowCued, null);
+    assert.strictEqual(ctl.getState().overlays.src, 'list');
     await ctl.overlayOff();
     await waitFor(() => ctl.getState().overlays.live.length === 0, 3000);
     assert.ok(JSON.parse(fs.readFileSync(ctl.tablesFile, 'utf8')).tables.length === 1);
@@ -1424,5 +1454,79 @@ test('tabela oseb: vzorec, zastava, slika, klic po številki, GO, kamera', async
     await engine.stop();
     srv.closeAllConnections();
     srv.close();
+  }
+});
+
+test('tabela iz v0.17 (vzorec Naslov/Podnaslov) dobi napis s {Tabela.Stolpec}', () => {
+  const { ctl } = makeController();
+  const pdir = ctl.projects.dir(ctl.projectId);
+  const style = ctl.addTitle({ template: 'l3-blok', f0: 'Vzorec', accent: '#ff0000' });
+  fs.writeFileSync(path.join(pdir, 'tables.json'), JSON.stringify({ tables: [{ id: 'tb1', name: 'Ekipa', styleTitleId: style,
+    columns: [{ id: 'c1', name: 'Ime' }, { id: 'c2', name: 'Klub' }], rows: [{ id: 'r1', cells: { c1: 'Ana', c2: 'NK' } }],
+    map: { f0: '{Ime}', f1: '{Klub} ({#})', f2: '' } }] }));
+  ctl._openProject(ctl.projectId);
+  const t = ctl.tables.get('tb1');
+  assert.ok(t.titleId && t.titleId !== style);
+  const nt = ctl.titles.get(t.titleId);
+  assert.strictEqual(nt.template, 'l3-blok');
+  assert.strictEqual(nt.accent, '#ff0000');
+  assert.strictEqual(nt.f0, '{Ekipa.Ime}');
+  assert.strictEqual(nt.f1, '{Ekipa.Klub} ({Ekipa.#})');
+  const rt = ctl._rowTitle(t, t.rows[0]);
+  assert.strictEqual(rt.f0, 'Ana');
+  assert.strictEqual(rt.f1, 'NK (1)');
+  // ob naslednjem odprtju se ne podvoji
+  const n = ctl.titles.items.length;
+  ctl._openProject(ctl.projectId);
+  assert.strictEqual(ctl.titles.items.length, n);
+});
+
+test('napisi kot vnosi v playlisti: sam, kot naslednji, naslednja oseba iz tabele', async () => {
+  const { ctl, engine, dir, sent } = makeController();
+  try {
+    for (const n of ['v1.mp4', 'v2.mp4', 'v3.mp4']) fs.writeFileSync(path.join(dir, n), 'x');
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    ctl.addFiles(['v1.mp4', 'v2.mp4', 'v3.mp4'].map((n) => path.join(dir, n)));
+    const g = ctl.playlist.groups[0];
+    await ctl.addToGroup(g.id, ctl.library.items.map((x) => x.id));
+    const tid = ctl.addTable('Govorniki');
+    await ctl.setCells(tid, [{ row: 0, col: 0, value: 'Ana' }, { row: 1, col: 0, value: 'Bor' }]);
+    const logo = ctl.addTitle({ template: 'klasicni', f0: 'Dobrodošli' });
+    // [osebe naslednja (auto)] v1 [napis kot naslednji] v2 [oseba 2, 1 s] v3
+    await ctl.addTitleEntry(g.id, { tableId: tid, row: 'next' }, 0);
+    await ctl.addTitleEntry(g.id, { titleId: logo, mode: 'next' }, 2);
+    await ctl.addTitleEntry(g.id, { tableId: tid, row: 2, seconds: 1, untilNext: false }, 4);
+    await assert.rejects(() => ctl.addTitleEntry(g.id, { titleId: 'ni-ga' }));
+    const st = ctl.getState().playlist[0].items;
+    assert.deepStrictEqual(st.map((e) => e.type), ['title', 'video', 'title', 'video', 'title', 'video']);
+    assert.strictEqual(st[0].name, 'Govorniki, naslednja oseba');
+    assert.strictEqual(st[2].name, 'pripravi: Dobrodošli');
+    const [, v1, , v2, , v3] = g.items;
+    assert.strictEqual(ctl.playlist.nextAfter(v1.id).entry.id, v2.id);
+
+    await ctl.setGroup(g.id, { end: 'cut' });
+    await ctl.cueGroup(g.id);
+    await ctl.take('cut'); // v1: Ana gre sama na program
+    await waitFor(() => sent.some((c) => /^CG 1-6\d ADD/.test(c) && c.includes('Ana')));
+    assert.strictEqual(ctl.getState().overlays.live[0].name, 'Ana');
+    ctl._onOsc({ address: '/channel/1/stage/layer/10/foreground/file/time', args: [9.99, 10] });
+    // konec v1: napis "Dobrodošli" je pripravljen (čaka na GO), Ana je še gor
+    await waitFor(() => ctl.getState().overlays.nextRow && ctl.getState().overlays.nextRow.kind === 'title');
+    assert.strictEqual(ctl.titlePvw, logo);
+    await ctl.take('cut'); // v2 na programu: Ana (do naslednjega posnetka) gre dol
+    await waitFor(() => ctl.getState().overlays.live.length === 0, 3000);
+    await ctl.overlayGo();
+    await waitFor(() => sent.some((c) => /^CG 1-6\d ADD/.test(c) && c.includes('Dobrodošli')));
+    assert.strictEqual(ctl.getState().overlays.live[0].name, 'Dobrodošli');
+    assert.strictEqual(ctl.titleCued, null);
+    // ročni sprožilec vnosa z osebo 2: zamenja napis, gre dol po 1 s
+    await ctl.fireTitleEntry(g.items[4].id);
+    await waitFor(() => ctl.getState().overlays.live.length === 1 && ctl.getState().overlays.live[0].name === 'Bor', 3000);
+    await waitFor(() => ctl.getState().overlays.live.length === 0, 4000);
+    assert.strictEqual(ctl.getState().overlays.table.current.name, 'Bor'); // razdelek NAPIS zdaj kaže tabelo
+    assert.ok(v3);
+  } finally {
+    await engine.stop();
   }
 });

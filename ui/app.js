@@ -133,7 +133,7 @@ function renderEngine() {
     .join('\n');
 }
 
-const TYPE_LABEL = { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK', action: 'AKCIJA' };
+const TYPE_LABEL = { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK', action: 'AKCIJA', title: 'NAPIS' };
 
 // Mediji: drevo projektne mape, filter in razvrščanje (shrani se v tem brskalniku).
 const lsGet = (k, d) => {
@@ -587,7 +587,25 @@ function renderPlaylist() {
       sel.focus();
       if (sel.showPicker) try { sel.showPicker(); } catch { /* ni podprto */ }
     };
-    head.append(addAct, cue, up, del);
+    const addTtl = el('button', 'item-btn', '+ napis');
+    addTtl.title = 'Dodaj napis ali osebo iz tabele kot vnos: gre na program sam ali se pripravi za GO, ko playlista pride do njega';
+    addTtl.onclick = (ev) => {
+      ev.stopPropagation();
+      const sel = titleEntrySelect();
+      sel.classList.add('add-act');
+      sel.onclick = (e2) => e2.stopPropagation();
+      sel.onchange = () => {
+        const v = sel.value;
+        if (!v) return render();
+        const spec = v.startsWith('tb:') ? { tableId: v.split(':')[1], row: v.split(':')[2] } : { titleId: v.slice(2) };
+        run('playlist.addTitle', { groupId: g.id, spec });
+      };
+      sel.onblur = () => setTimeout(render, 0);
+      addTtl.replaceWith(sel);
+      sel.focus();
+      if (sel.showPicker) try { sel.showPicker(); } catch { /* ni podprto */ }
+    };
+    head.append(addAct, addTtl, cue, up, del);
     wrap.append(head);
 
     const ul = el('ul', 'group-list');
@@ -620,6 +638,14 @@ function renderPlaylist() {
 
       const type = el('span', `type ${e.type}`, TYPE_LABEL[e.type] || e.type);
       li.append(el('span', 'num', String(i + 1)), type, el('span', 'name', e.name + (e.loop ? '  ⟲' : '')));
+      if (e.kind === 'title') {
+        li.classList.add('act', 'ttl');
+        li.title = 'Napis se sproži, ko playlista pride do njega (kot akcija): za posnetkom ob njegovem koncu, pred posnetkom ob njegovem začetku.';
+        li.append(...titleEntryControls(e, g, i));
+        li.onclick = (ev) => { ev.stopPropagation(); targetGroupId = g.id; };
+        ul.append(li);
+        return;
+      }
       if (e.kind === 'action') {
         li.classList.add('act');
         li.title = 'Akcija se sproži, ko playlista pride do nje: za posnetkom ob njegovem koncu (ali ko gre naslednji na program), na začetku pred prvim posnetkom.';
@@ -2020,3 +2046,97 @@ api.on('load', (l) => {
   }
   $('#load').innerHTML = parts.join('');
 });
+
+/** Izbira za "+ napis": osebe iz tabel (naslednja / trenutna) in napisi. */
+function titleEntrySelect() {
+  const sel = el('select', 'mini-select');
+  sel.add(new Option('—', ''));
+  const tabs = (state.tables && state.tables.tables) || [];
+  if (tabs.length) {
+    const og = document.createElement('optgroup');
+    og.label = 'Osebe iz tabele';
+    for (const t of tabs) {
+      og.append(new Option(`${t.name}: naslednja oseba`, `tb:${t.id}:next`));
+      og.append(new Option(`${t.name}: trenutna oseba`, `tb:${t.id}:cur`));
+    }
+    sel.append(og);
+  }
+  const items = ((state.titles && state.titles.items) || []);
+  if (items.length) {
+    const og = document.createElement('optgroup');
+    og.label = 'Napisi';
+    for (const x of items) og.append(new Option(x.label, `t:${x.id}`));
+    sel.append(og);
+  }
+  return sel;
+}
+
+/** Nastavitve vnosa z napisom v playlisti. */
+function titleEntryControls(e, g, i) {
+  const out = [];
+  const set = (patch) => run('playlist.setEntry', { entryId: e.id, patch });
+  const stop = (x) => { x.onclick = (ev) => ev.stopPropagation(); x.onblur = () => setTimeout(render, 0); return x; };
+  const box = el('span', 'act-delay ttl-opts');
+  if (e.tableId) {
+    const t = ((state.tables && state.tables.tables) || []).find((x) => x.id === e.tableId);
+    const who = stop(el('select', 'mini-select'));
+    who.title = 'Katera oseba';
+    who.add(new Option('naslednja', 'next'));
+    who.add(new Option('trenutna', 'cur'));
+    for (const r of (t ? t.rows : []).filter((x) => Object.keys(x.cells).length)) {
+      const c = t.columns.find((x) => x.kind === 'text');
+      who.add(new Option(`${r.n}: ${(c && r.cells[c.id]) || ''}`.slice(0, 40), String(r.n)));
+    }
+    who.value = String(e.row);
+    who.onchange = () => set({ row: who.value === 'next' || who.value === 'cur' ? who.value : Number(who.value) });
+    box.append(who);
+  }
+  const mode = stop(el('select', 'mini-select'));
+  mode.title = 'sam: gre na program, ko playlista pride do njega; pripravi: čaka v razdelku NAPIS, gre gor z GO';
+  mode.add(new Option('sam', 'auto'));
+  mode.add(new Option('pripravi za GO', 'next'));
+  mode.value = e.mode;
+  mode.onchange = () => set({ mode: mode.value });
+  box.append(mode);
+  const num = (val, title, key) => {
+    const n = stop(el('input'));
+    n.type = 'number';
+    n.min = 0;
+    n.max = 3600;
+    n.step = 0.5;
+    n.value = val || 0;
+    n.title = title;
+    n.onchange = () => set({ [key]: Number(n.value) || 0 });
+    n.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === 'Escape') n.blur(); };
+    return n;
+  };
+  box.append(document.createTextNode('+'), num(e.delay, 'Koliko sekund pozneje se sproži', 'delay'), document.createTextNode('s'));
+  box.append(document.createTextNode(' dol po'), num(e.seconds, 'Po koliko sekundah gre dol (0 = ne gre dol sam)', 'seconds'), document.createTextNode('s'));
+  const un = el('label', 'ttl-until');
+  un.title = 'Napis gre dol, ko gre na program naslednji posnetek';
+  const cb = el('input');
+  cb.type = 'checkbox';
+  cb.checked = e.untilNext;
+  cb.onclick = (ev) => ev.stopPropagation();
+  cb.onchange = () => set({ untilNext: cb.checked });
+  un.append(cb, document.createTextNode('do nasl.'));
+  un.onclick = (ev) => ev.stopPropagation();
+  box.append(un);
+  out.push(box);
+  const go = el('button', 'item-btn', '▶');
+  go.title = 'Sproži zdaj';
+  go.disabled = e.missing;
+  go.onclick = (ev) => { ev.stopPropagation(); run('playlist.fireEntry', { entryId: e.id }); };
+  const mv = (txt, title, to, dis) => {
+    const b = el('button', 'item-btn', txt);
+    b.title = title;
+    b.disabled = dis;
+    b.onclick = (ev) => { ev.stopPropagation(); run('playlist.moveEntry', { entryId: e.id, groupId: g.id, index: to }); };
+    return b;
+  };
+  const x = el('button', 'item-btn', '✕');
+  x.title = 'Odstrani iz skupine';
+  x.onclick = (ev) => { ev.stopPropagation(); run('playlist.removeEntry', { entryId: e.id }); };
+  out.push(go, mv('▲', 'Gor', i - 1, i === 0), mv('▼', 'Dol', i + 1, i === g.items.length - 1), x);
+  return out;
+}

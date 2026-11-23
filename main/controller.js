@@ -180,6 +180,10 @@ class Controller extends EventEmitter {
       playlist: this.playlist.groups.map((g) => ({
         ...g,
         items: g.items.map((e) => {
+          if (e.kind === 'title') {
+            const x = this._titleEntryLabel(e);
+            return { ...e, name: x.name, type: 'title', missing: x.missing };
+          }
           if (e.kind === 'action') {
             const label = this._actionLabel(e.actionId);
             return { ...e, name: label || '? (akcija ne obstaja)', type: 'action', missing: !label };
@@ -657,6 +661,9 @@ class Controller extends EventEmitter {
     await this.overlayOff().catch(() => {});
     this.ovlNext = null;
     this.rowCued = null;
+    this.titleCued = null;
+    this._cueOpts = null;
+    this._entryTitles = [];
     this._nextKind = 'list';
     await this._clearTitles();
     if (this.engine.status === 'running') {
@@ -1010,6 +1017,17 @@ class Controller extends EventEmitter {
     this._group(groupId);
     if (!this._actionLabel(actionId)) this._error('Akcija ne obstaja');
     const e = this.playlist.addAction(groupId, actionId, index);
+    this._savePlaylist();
+    await this._rearm();
+    return e.id;
+  }
+
+  /** Napis kot vnos v playlisti. */
+  async addTitleEntry(groupId, spec, index) {
+    this._group(groupId);
+    if (spec && spec.tableId) this._requireTable(spec.tableId);
+    else if (!(spec && this.titles.items.some((x) => x.id === spec.titleId))) this._error('Napis ne obstaja');
+    const e = this.playlist.addTitleEntry(groupId, spec, index);
     this._savePlaylist();
     await this._rearm();
     return e.id;
@@ -1408,6 +1426,7 @@ class Controller extends EventEmitter {
     const offset = (seekFrames / fpsOf(this.settings.videoMode)) * 1000;
     this.program = { item: { ...item }, startedAt: Date.now() - offset, wallStart: Date.now(), src: src || null };
     this._armEntryActions();
+    this._dropEntryTitles(src ? src.entryId : null);
     this._armRundown();
     this._scheduleImageEnd();
     this._armEntryTitle();
@@ -1958,12 +1977,15 @@ class Controller extends EventEmitter {
   }
 
   _fireEntryAction(a, why) {
-    if (!this.actions) return;
+    const run = a.kind === 'title'
+      ? () => this._fireTitleEntry(a).catch((e) => { this.lastError = e.message; this._changed(); })
+      : () => this._runAction(a.actionId, why);
+    if (a.kind !== 'title' && !this.actions) return;
     if (!a.delay) {
-      this._runAction(a.actionId, why);
+      run();
       return;
     }
-    const t = setTimeout(() => this._runAction(a.actionId, why), a.delay * 1000);
+    const t = setTimeout(run, a.delay * 1000);
     if (t.unref) t.unref();
   }
 

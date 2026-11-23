@@ -41,9 +41,35 @@ function normActionEntry(e) {
   };
 }
 
-const isAction = (e) => !!(e && e.kind === 'action');
+/**
+ * Vnos z napisom: napis iz zavihka Napisi (titleId) ali oseba iz tabele (tableId + row).
+ * row: 'next' = naslednja oseba za trenutno, 'cur' = trenutna, število = oseba s to številko.
+ * mode: 'auto' = gre sam na program, 'next' = pripravi se v razdelku NAPIS in čaka na GO.
+ * seconds: dol po X s (0 = brez časa); untilNext: dol, ko gre na program naslednji posnetek.
+ */
+function normTitleEntry(e) {
+  const n = Number(e.row);
+  return {
+    id: e.id,
+    kind: 'title',
+    mediaId: null,
+    titleId: typeof e.titleId === 'string' && e.titleId && !e.tableId ? e.titleId : null,
+    tableId: typeof e.tableId === 'string' && e.tableId ? e.tableId : null,
+    row: e.row === 'cur' ? 'cur' : Number.isInteger(n) && n > 0 && n < 100000 ? n : 'next',
+    mode: e.mode === 'next' ? 'next' : 'auto',
+    delay: Math.max(0, Math.min(3600, optSeconds(e.delay) || 0)),
+    seconds: Math.max(0, Math.min(3600, optSeconds(e.seconds) || 0)),
+    untilNext: e.untilNext !== false,
+    layers: [],
+  };
+}
+
+/** Vnos brez posnetka (akcija ali napis): traja 0 s, sproži ga playlista. */
+const isAction = (e) => !!(e && (e.kind === 'action' || e.kind === 'title'));
+const isTitleEntry = (e) => !!(e && e.kind === 'title');
 
 function normEntry(e) {
+  if (e && e.kind === 'title') return normTitleEntry(e);
   if (e && (e.kind === 'action' || (!e.mediaId && typeof e.actionId === 'string'))) return normActionEntry(e);
   return {
     id: e.id,
@@ -159,7 +185,7 @@ function normalize(data) {
       kenBurns: !!g.kenBurns, // slike v skupini počasi povečuje/pomanjšuje
       blur: !!g.blur, // slike brez lastnega prileganja dobijo zamegljeno ozadje
       collapsed: !!g.collapsed,
-      items: (Array.isArray(g.items) ? g.items : []).filter((e) => e && e.id && (e.mediaId || (typeof e.actionId === 'string' && e.actionId))).map(normEntry),
+      items: (Array.isArray(g.items) ? g.items : []).filter((e) => e && e.id && (e.mediaId || (typeof e.actionId === 'string' && e.actionId) || (e.kind === 'title' && (e.titleId || e.tableId)))).map(normEntry),
     }));
   if (!out.length) out.push({ ...makeGroup('Playlist') });
   const overlays = (Array.isArray(data && data.overlays) ? data.overlays : [])
@@ -285,11 +311,42 @@ class Playlist {
     return e;
   }
 
+  /** Doda napis kot vnos v skupino. spec: { titleId } ali { tableId, row }, mode, seconds ... */
+  addTitleEntry(groupId, spec, index) {
+    const g = this.group(groupId);
+    if (!g || !spec || !(spec.titleId || spec.tableId)) return null;
+    const e = normTitleEntry({ ...spec, id: newId() });
+    const at = Number.isInteger(index) ? Math.max(0, Math.min(g.items.length, index)) : g.items.length;
+    g.items.splice(at, 0, e);
+    return e;
+  }
+
+  /** Prvi posnetek za vnosom (h kateremu napis spada). */
+  mediaAfter(entryId) {
+    const flat = this.flat();
+    const at = flat.findIndex((x) => x.entry.id === entryId);
+    if (at === -1) return null;
+    const f = flat[at];
+    if (f.group.loop) {
+      const items = f.group.items;
+      const i = items.indexOf(f.entry);
+      for (let k = 1; k <= items.length; k++) if (!isAction(items[(i + k) % items.length])) return items[(i + k) % items.length];
+      return null;
+    }
+    for (let i = at + 1; i < flat.length; i++) if (!isAction(flat[i].entry)) return flat[i].entry;
+    return null;
+  }
+
   /** Nastavitve vnosa: end, seconds, inSec, outSec (null = privzeto). */
   setEntry(entryId, patch) {
     const f = this.findEntry(entryId);
     if (!f) return null;
     const e = f.entry;
+    if (isTitleEntry(e)) {
+      const n = normTitleEntry({ ...e, ...patch, id: e.id });
+      Object.assign(e, n);
+      return e;
+    }
     if (isAction(e)) {
       if (typeof patch.actionId === 'string' && patch.actionId) e.actionId = patch.actionId;
       if ('delay' in patch) e.delay = Math.max(0, Math.min(3600, optSeconds(patch.delay) || 0));
@@ -452,4 +509,4 @@ class Playlist {
   }
 }
 
-module.exports = { Playlist, isAction, DEFAULT_IMAGE_SECONDS, GROUP_ENDS, ENTRY_ENDS, optSeconds, BLENDS, COLOR_KEYS, MAX_LAYERS };
+module.exports = { Playlist, isAction, isTitleEntry, DEFAULT_IMAGE_SECONDS, GROUP_ENDS, ENTRY_ENDS, optSeconds, BLENDS, COLOR_KEYS, MAX_LAYERS };

@@ -39,8 +39,8 @@ const methods = {
     for (const [k, r] of this.ovlLive) {
       if (r.row) {
         if (this._titleOnLayer(r.titleId) === null || this._titleClosing(r.titleId)) continue;
-        const t = this.titles.virtual.get(r.titleId);
-        live.push({ id: k, name: t ? t.rowName : k });
+        const t = this.titles.get(r.titleId);
+        live.push({ id: k, name: t ? t.rowName || titleLabel(t) : k });
       } else {
         const o = this.playlist.overlay(k);
         if (o && this._ovlIsOn(o)) live.push({ id: k, name: null });
@@ -48,6 +48,8 @@ const methods = {
     }
     const nextRow = this._nextLabel ? this._nextLabel() : null;
     const out = {
+      src: (this._nextKind === 'title' ? this._titleCuedPrev : this._nextKind) === 'row' && this.tables.activeTable() ? this.tables.activeTable().id : 'list',
+      table: this._gfxTableState ? this._gfxTableState() : null,
       next: this.ovlNext,
       nextKind: nextRow ? 'row' : 'list',
       nextRow,
@@ -119,7 +121,11 @@ const methods = {
 
   /** GO: naslednji (ali izbrani) gre čez program; prejšnji iz seznama gre dol, razen če ima "ostane". */
   async overlayGo(id = null) {
-    if (!id && this._nextKind === 'row' && this.rowCued) return this._rowGo();
+    if (!id && this._nextKind === 'title' && this.titleCued) return this._titleGo();
+    if (!id && this._nextKind === 'row') {
+      if (this.rowCued) return this._rowGo();
+      this._error('Ni pripravljene osebe (▶ ali vpiši številko osebe)');
+    }
     const list = this.playlist.overlays;
     const o = list.find((x) => x.id === (id || this.ovlNext));
     if (!o) this._error('Ni naslednjega napisa (izberi v seznamu Čez program ali vpiši številko osebe)');

@@ -6,7 +6,6 @@ const KIND_LABEL = { text: 'besedilo', flag: 'država (zastava)', image: 'slika 
 let tbSel = { r0: 0, c0: 0, r1: 0, c1: 0 }; // izbor celic (c = -1 je stolpec #)
 let tbEdit = null; // { r, c, input }
 let tbSig = '';
-let tbLastMap = 'f0';
 let tbDrag = false;
 
 function tablesSt() {
@@ -83,8 +82,9 @@ function renderPeople() {
       li.append(img);
     }
     const tx = el('span', 'pp-tx');
-    tx.append(el('b', '', tbFill(t.map.f0, t, r) || '(brez naslova)'));
-    const sub = [tbFill(t.map.f1, t, r), tbFill(t.map.f2, t, r)].filter(Boolean).join(' · ');
+    const pat = tbPatterns(t);
+    tx.append(el('b', '', tbFill(pat.f0, t, r) || tbFill(pat.first, t, r) || '(prazno)'));
+    const sub = [tbFill(pat.f1, t, r), tbFill(pat.f2, t, r)].filter(Boolean).join(' · ');
     if (sub) tx.append(el('small', '', sub));
     li.append(tx);
     if (isCued(t, r)) li.append(el('span', 'badge next', 'NEXT'));
@@ -152,48 +152,36 @@ function renderCfg(t) {
     box.append(l);
     return input;
   };
-  const style = el('select', 'mini-select');
-  const og1 = document.createElement('optgroup');
-  og1.label = 'Slog iz napisa (zavihek Napisi)';
-  for (const x of T.items) og1.append(new Option(x.label, x.id));
-  const og2 = document.createElement('optgroup');
-  og2.label = 'Samo predloga (privzete barve projekta)';
-  for (const x of T.templates.filter((y) => !y.clock && y.fields.length)) og2.append(new Option(x.name, `tpl:${x.id}`));
-  if (T.items.length) style.append(og1);
-  style.append(og2);
-  style.value = t.styleTitleId || `tpl:${t.template}`;
-  style.onchange = () => {
-    const v = style.value;
-    run('tables.set', { id: t.id, patch: v.startsWith('tpl:') ? { styleTitleId: null, template: v.slice(4) } : { styleTitleId: v } });
+  const sel = el('select', 'mini-select');
+  sel.add(new Option('(privzet napis iz prvih stolpcev)', ''));
+  for (const x of T.items.filter((y) => !(tplOf(y.template) || {}).clock)) sel.add(new Option(x.label, x.id));
+  sel.value = t.titleId || '';
+  sel.onchange = () => run('tables.set', { id: t.id, patch: { titleId: sel.value || null } });
+  lab('Napis za GO', sel, `Napis iz zavihka Napisi, ki se uporabi za osebo iz te tabele. V njegovih poljih so podatki kot {${t.name}.Ime}.`);
+  const nb = el('button', 'item-btn', '+ nov napis');
+  nb.type = 'button';
+  nb.title = 'Naredi nov napis s polji iz te tabele in ga izberi';
+  nb.onclick = async () => {
+    const id = await run('tables.addTitle', { id: t.id });
+    if (id) showInfo('Nov napis je v zavihku Napisi (izgled spremeniš tam).');
   };
-  lab('Napis', style, 'Predloga, barve, velikost in položaj: izberi napis iz zavihka Napisi kot vzorec (njegovo besedilo se zamenja s podatki osebe).');
-  const mapIn = (key, label, ph) => {
-    const i = el('input', 'text-input tb-map');
-    i.value = t.map[key];
-    i.placeholder = ph;
-    i.onfocus = () => { tbLastMap = key; };
-    i.onchange = () => run('tables.set', { id: t.id, patch: { map: { [key]: i.value } } });
-    i.onkeydown = (ev) => { if (ev.key === 'Enter') i.blur(); };
-    i.dataset.map = key;
-    return lab(label, i, 'Imena stolpcev v zavitih oklepajih, npr. {Ime} {Priimek} ali {Funkcija}, {Klub}. {#} = številka.');
+  const eb = el('button', 'item-btn', 'Uredi napis');
+  eb.type = 'button';
+  eb.disabled = !t.titleId;
+  eb.title = 'Odpre napis v zavihku Napisi (predloga, barve, velikost, polja)';
+  eb.onclick = () => {
+    $('#dlg-table').close();
+    setLeftTab('titles');
+    selectTitle(t.titleId);
   };
-  mapIn('f0', 'Naslov', '{Ime}');
-  mapIn('f1', 'Podnaslov', '{Funkcija}, {Klub}');
-  mapIn('f2', 'Oznaka', 'neobvezno');
-  const chips = el('div', 'tb-chips');
-  chips.append(el('span', 'hint-inline', 'Vstavi:'));
-  for (const c of t.columns.filter((x) => x.kind === 'text' || x.kind === 'flag')) {
-    const b = el('button', 'item-btn', `{${c.name}}`);
-    b.type = 'button';
-    b.onmousedown = (ev) => ev.preventDefault();
-    b.onclick = () => {
-      const i = box.querySelector(`[data-map="${tbLastMap}"]`);
-      const v = `${i.value}${i.value && !/\s$/.test(i.value) ? ' ' : ''}{${c.name}}`;
-      run('tables.set', { id: t.id, patch: { map: { [tbLastMap]: v } } });
-    };
-    chips.append(b);
-  }
-  box.append(chips);
+  const btns = el('div', 'tb-chips');
+  btns.append(nb, eb);
+  box.append(btns);
+  const live = el('input');
+  live.type = 'checkbox';
+  live.checked = !!t.liveUpdate;
+  live.onchange = () => run('tables.set', { id: t.id, patch: { liveUpdate: live.checked } });
+  lab('◀ ▶ takoj zamenja osebo na programu', live, 'Ko je oseba iz te tabele na programu, puščica zamenja besedilo kar na programu (brez izhoda in prihoda napisa). Izklopljeno: puščica osebo le pripravi, GO jo zamenja z animacijo.');
   const sec = el('input', 'text-input small-num');
   sec.type = 'number';
   sec.min = 0;
@@ -602,4 +590,14 @@ async function importCsv(text) {
 function renderTables() {
   renderPeople();
   renderTableEditor();
+}
+
+/** Vzorci za seznam oseb iz napisa tabele: {Tabela.Stolpec} te tabele -> {Stolpec}. */
+function tbPatterns(t) {
+  const tt = ((state.titles && state.titles.items) || []).find((x) => x.id === t.titleId);
+  const own = (v) => String(v || '').replace(/\{([^{}.]+)\.([^{}]+)\}/g, (a, tn, cn) => (tn.trim().toLowerCase() === t.name.toLowerCase() ? `{${cn}}` : ''));
+  const text = t.columns.filter((c) => c.kind === 'text');
+  const first = text[0] ? `{${text[0].name}}` : '';
+  if (!tt) return { f0: first, f1: text[1] ? `{${text[1].name}}` : '', f2: '', first };
+  return { f0: own(tt.f0), f1: own(tt.f1), f2: own(tt.f2), first };
 }

@@ -223,7 +223,14 @@ function renderPlaylist() {
       if (e.id === pgmE) b.classList.add('pgm');
       if (e.id === pvwE) b.classList.add('pvw');
       if (e.missing) b.classList.add('missing');
-      b.append(el('span', 'n', String(n)), el('span', 'ty', { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK', action: 'AKCIJA' }[e.type] || ''), el('span', 'nm', e.name + (e.delay ? `  +${e.delay} s` : '')));
+      b.append(el('span', 'n', String(n)), el('span', 'ty', { video: 'VIDEO', image: 'SLIKA', audio: 'ZVOK', action: 'AKCIJA', title: 'NAPIS' }[e.type] || ''), el('span', 'nm', e.name + (e.delay ? `  +${e.delay} s` : '')));
+      if (e.kind === 'title') {
+        b.classList.add('act');
+        b.title = 'Klik sproži napis zdaj';
+        b.onclick = () => run('playlist.fireEntry', { entryId: e.id });
+        gd.append(b);
+        continue;
+      }
       if (e.kind === 'action') {
         b.classList.add('act');
         b.title = 'Klik sproži akcijo zdaj';
@@ -248,11 +255,26 @@ function renderGfx() {
   $('#r-gfx').classList.toggle('hidden', !O.items.length && !hasTables);
   $('#r-kp-row').classList.toggle('hidden', !hasTables);
   if (!hasTables) $('#r-kp').classList.add('hidden');
-  const nx = O.items.find((o) => o.id === O.next);
+  const nx = O.src === 'list' ? O.items.find((o) => o.id === O.next) : null;
   const row = O.nextRow;
+  const TB = O.table;
+  const src = $('#r-gfx-src');
+  const tabs = hasTables ? state.tables.tables : [];
+  const sig = tabs.map((t) => `${t.id}:${t.name}`).join('|');
+  if (src.dataset.sig !== sig) {
+    src.dataset.sig = sig;
+    src.innerHTML = '';
+    src.add(new Option('Seznam Čez program', 'list'));
+    for (const t of tabs) src.add(new Option(`Osebe: ${t.name}`, t.id));
+  }
+  if (document.activeElement !== src) src.value = O.src || 'list';
+  src.parentElement.classList.toggle('hidden', !hasTables);
+  const p = TB && (TB.cued || TB.current);
+  $('#r-gfx-pos').textContent = TB ? `${p ? p.pos : '–'} / ${TB.total}` : '';
   const box = $('#r-gfx-next');
   box.innerHTML = '';
-  if (row) box.append(document.createTextNode(`Oseba ${row.num}: `), el('b', '', row.name));
+  if (row) box.append(document.createTextNode(row.kind === 'title' ? 'Napis: ' : `Oseba ${row.num}: `), el('b', '', row.name));
+  else if (TB) box.textContent = TB.current ? `Zdaj: ${TB.current.name}` : '▶ ali številka pripravi osebo';
   else if (nx) box.append(document.createTextNode(`Naslednji ${O.items.indexOf(nx) + 1}: `), el('b', '', nx.name));
   else box.textContent = 'Napis: ni naslednjega';
   const on = (O.live || []).length;
@@ -378,6 +400,7 @@ setTab(tab);
 // ---------- gumbi ----------
 
 $('#r-cut').onclick = () => run('take.cut');
+$('#r-gfx-src').onchange = () => run('ovl.source', { src: $('#r-gfx-src').value });
 $('#r-gfx-go').onclick = () => run('ovl.go');
 $('#r-gfx-off').onclick = () => run('ovl.off');
 $('#r-gfx-prev').onclick = () => run('ovl.step', { dir: -1 });
