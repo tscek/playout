@@ -118,6 +118,33 @@ function normLayer(l) {
   };
 }
 
+// ---------- seznam "Čez program" (napisi in grafike čez program, s svojim NEXT/GO) ----------
+
+const OVL_ENDS = ['clear', 'hold', 'loop']; // grafika (video): na koncu izgine, ostane zadnja sličica, ponavlja
+const OVL_GEO = ['posX', 'posY', 'scale', 'opacity', 'volumeDb', 'muted'];
+
+function normOverlay(o) {
+  const base = {
+    id: typeof o.id === 'string' && o.id ? o.id : newId(),
+    kind: o.kind === 'media' ? 'media' : 'title',
+    seconds: Math.max(0, Math.min(3600, optSeconds(o.seconds) || 0)), // 0 = ostane, dokler ga ne umakneš
+    keep: !!o.keep, // ne umakne prejšnjega (ostaneta oba)
+    fade: clamp(o.fade, 0, 5, 0.4), // sekunde za prikaz/umik grafike
+  };
+  if (base.kind === 'title') return { ...base, titleId: typeof o.titleId === 'string' ? o.titleId : '' };
+  return {
+    ...base,
+    mediaId: typeof o.mediaId === 'string' ? o.mediaId : '',
+    end: OVL_ENDS.includes(o.end) ? o.end : 'clear',
+    posX: clamp(o.posX, -150, 150, 0),
+    posY: clamp(o.posY, -150, 150, 0),
+    scale: clamp(o.scale, 0.02, 5, 1),
+    opacity: clamp(o.opacity, 0, 1, 1),
+    volumeDb: clamp(o.volumeDb, -40, 10, 0),
+    muted: o.muted === undefined ? true : !!o.muted, // grafike so privzeto brez zvoka
+  };
+}
+
 function normalize(data) {
   const groups = Array.isArray(data && data.groups) ? data.groups : [];
   const out = groups
@@ -135,7 +162,9 @@ function normalize(data) {
       items: (Array.isArray(g.items) ? g.items : []).filter((e) => e && e.id && (e.mediaId || (typeof e.actionId === 'string' && e.actionId))).map(normEntry),
     }));
   if (!out.length) out.push({ ...makeGroup('Playlist') });
-  return { groups: out };
+  const overlays = (Array.isArray(data && data.overlays) ? data.overlays : [])
+    .filter((o) => o && (o.titleId || o.mediaId)).slice(0, 500).map(normOverlay);
+  return { groups: out, overlays };
 }
 
 function clampSeconds(v) {
@@ -146,11 +175,50 @@ function clampSeconds(v) {
 
 class Playlist {
   constructor(data) {
-    this.groups = normalize(data).groups;
+    const n = normalize(data);
+    this.groups = n.groups;
+    this.overlays = n.overlays;
   }
 
   toJSON() {
-    return { groups: this.groups };
+    return { groups: this.groups, overlays: this.overlays };
+  }
+
+  // ---------- seznam "Čez program" ----------
+
+  overlay(id) {
+    return this.overlays.find((o) => o.id === id) || null;
+  }
+
+  /** spec: { kind: 'title', titleId } ali { kind: 'media', mediaId }. */
+  addOverlay(spec, index) {
+    if (!spec || !(spec.titleId || spec.mediaId)) return null;
+    const o = normOverlay({ ...spec, id: null });
+    const at = Number.isInteger(index) ? Math.max(0, Math.min(this.overlays.length, index)) : this.overlays.length;
+    this.overlays.splice(at, 0, o);
+    return o;
+  }
+
+  setOverlay(id, patch) {
+    const o = this.overlay(id);
+    if (!o || !patch) return null;
+    const keys = ['seconds', 'keep', 'fade', ...(o.kind === 'media' ? ['end', ...OVL_GEO] : [])];
+    const p = { ...patch };
+    if (p.reset) Object.assign(p, { posX: 0, posY: 0, scale: 1, opacity: 1 });
+    const next = normOverlay({ ...o, ...Object.fromEntries(keys.filter((k) => k in p).map((k) => [k, p[k]])) });
+    for (const k of keys) o[k] = next[k];
+    return o;
+  }
+
+  removeOverlay(id) {
+    this.overlays = this.overlays.filter((o) => o.id !== id);
+  }
+
+  moveOverlay(id, toIndex) {
+    const from = this.overlays.findIndex((o) => o.id === id);
+    if (from === -1) return;
+    const [o] = this.overlays.splice(from, 1);
+    this.overlays.splice(Math.max(0, Math.min(this.overlays.length, toIndex)), 0, o);
   }
 
   group(groupId) {
@@ -314,6 +382,7 @@ class Playlist {
 
   /** Ko je posnetek odstranjen iz knjižnice, ga odstranimo tudi iz playliste. */
   removeMedia(mediaId) {
+    this.overlays = this.overlays.filter((o) => o.mediaId !== mediaId);
     for (const g of this.groups) {
       g.items = g.items.filter((e) => isAction(e) || e.mediaId !== mediaId);
       for (const e of g.items) e.layers = e.layers.filter((l) => l.mediaId !== mediaId);

@@ -1272,3 +1272,71 @@ test('akcije kot vnosi v playlisti (potek prireditve)', async () => {
     srv.close();
   }
 });
+
+test('seznam Čez program: napisi in grafike z NEXT/GO', async () => {
+  const { ctl, engine, sent, media, dir } = makeController();
+  try {
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    const logo = path.join(dir, 'logo.png');
+    fs.writeFileSync(logo, Buffer.from('89504e470d0a1a0a0000000d4948445200000064000000320806000000', 'hex'));
+    ctl.addFiles([media, logo]);
+    const [vid, img] = ctl.library.items;
+    const t1 = ctl.addTitle({ template: 'klasicni', f0: 'Janez' });
+    const t2 = ctl.addTitle({ template: 'klasicni', f0: 'Mojca' });
+    const o1 = ctl.addOverlay({ kind: 'title', titleId: t1 });
+    const o2 = ctl.addOverlay({ kind: 'title', titleId: t2 });
+    const o3 = ctl.addOverlay({ kind: 'media', mediaId: vid.id });
+    const o4 = ctl.addOverlay({ kind: 'media', mediaId: img.id });
+    assert.throws(() => ctl.addOverlay({ kind: 'title', titleId: 'ni' }));
+    await ctl.setOverlay(o4, { keep: true, scale: 0.2, posX: 40, posY: -40, fade: 0 });
+    await ctl.setOverlay(o3, { end: 'clear', fade: 0 });
+    assert.strictEqual(ctl.getState().overlays.next, o1);
+
+    await ctl.overlayGo();
+    await waitFor(() => ctl._titleOnLayer(t1) !== null);
+    assert.strictEqual(ctl.ovlNext, o2);
+    await ctl.overlayGo(); // Mojca zamenja Janeza
+    await waitFor(() => ctl._titleOnLayer(t2) !== null);
+    await waitFor(() => sent.includes('CG 1-60 STOP 0'));
+    let st = ctl.getState().overlays;
+    assert.deepStrictEqual(st.items.map((x) => x.onAir), [false, true, false, false]);
+
+    await ctl.overlayGo(); // video grafika: napis gre dol
+    await waitFor(() => sent.some((c) => c.startsWith('PLAY 1-70 ') && c.includes('clip one.mp4')));
+    await waitFor(() => ctl._titleOnLayer(t2) === null, 3000);
+    await ctl.overlayGo(); // logo ostane skupaj z grafiko
+    await waitFor(() => sent.some((c) => c.startsWith('PLAY 1-71 ') && c.includes('logo.png')));
+    assert.ok(sent.includes('MIXER 1-71 FILL 0.8000 0.0000 0.2000 0.2000'));
+    st = ctl.getState().overlays;
+    assert.deepStrictEqual(st.items.map((x) => x.onAir), [false, false, true, true]);
+    assert.strictEqual(st.next, null);
+
+    // Video grafika z "na koncu izgine" gre dol sama.
+    ctl._onOsc({ address: '/channel/1/stage/layer/70/foreground/file/time', args: [4.99, 5] });
+    await waitFor(() => sent.includes('CLEAR 1-70'));
+    assert.ok(!ctl._ovlIsOn(ctl.playlist.overlay(o3)));
+
+    // Ročno na izbranega, samodejni umik po času, vse dol.
+    await ctl.setOverlay(o1, { seconds: 0.3 });
+    await ctl.overlayGo(o1);
+    await waitFor(() => ctl._titleOnLayer(t1) !== null);
+    await waitFor(() => !ctl.ovlLive.has(o1), 2000);
+    assert.ok(ctl.ovlLive.has(o4)); // logo ostane
+    await ctl.overlayOff();
+    await waitFor(() => sent.includes('CLEAR 1-71'));
+    assert.strictEqual(ctl.ovlLive.size, 0);
+
+    // Shrani se s playlisto in vrstni red se da spremeniti.
+    ctl.moveOverlay(o4, 0);
+    const { Playlist } = require('../main/playlist');
+    const again = new Playlist(JSON.parse(fs.readFileSync(ctl.playlistFile, 'utf8')));
+    assert.deepStrictEqual(again.overlays.map((o) => o.id), [o4, o1, o2, o3]);
+    assert.strictEqual(again.overlays[0].scale, 0.2);
+    await ctl.removeItem(vid.id);
+    assert.ok(!ctl.playlist.overlay(o3));
+  } finally {
+    ctl._unwatch && ctl._unwatch();
+    await engine.stop();
+  }
+});

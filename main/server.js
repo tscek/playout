@@ -14,7 +14,7 @@ const LAN_PORT = 8090;
 /** Ukazi, ki jih sme poslati tablica (nič, kar briše datoteke ali spreminja nastavitve računalnika). */
 const REMOTE_ACTIONS = new Set([
   'state.get', 'take.cut', 'take.auto', 'preview.load', 'preview.clear', 'program.clear', 'program.panic', 'program.direct',
-  'playlist.cueGroup', 'seek', 'step', 'playPause', 'media.volume', 'media.mute', 'actions.run',
+  'playlist.cueGroup', 'seek', 'step', 'playPause', 'media.volume', 'media.mute', 'actions.run', 'ovl.go', 'ovl.off', 'ovl.next',
   'titles.on', 'titles.off', 'titles.toggle', 'titles.allOff', 'titles.preview', 'remote.command', 'atem.run', 'device.run', 'ptz.move',
 ]);
 
@@ -132,6 +132,8 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       if (cmd === 'action') cmd = `action:${find(st.actions, parts.slice(1).join('/'))}`;
       else if (cmd === 'group') cmd = `group:${find(st.groups, parts.slice(1).join('/'))}`;
       else if (cmd === 'titles' && parts[1] === 'off') cmd = 'titlesOff';
+      else if (cmd === 'overlay' && parts[1] === 'go') cmd = 'ovlGo';
+      else if (cmd === 'overlay' && parts[1] === 'off') cmd = 'ovlOff';
       else if (cmd === 'preset') {
         // /api/preset/<id> ali /api/preset/<naprava>/<ime preseta>, npr. /api/preset/ATEM/AUTO → Kamera 1
         const key = parts.slice(1).join('/');
@@ -265,6 +267,13 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'playlist.moveGroup': (a) => controller.moveGroup(a.groupId, a.index),
     'playlist.add': (a) => controller.addToGroup(a.groupId, a.mediaIds, a.index),
     'playlist.addAction': (a) => controller.addActionEntry(a.groupId, a.actionId, a.index),
+    'ovl.add': (a) => controller.addOverlay(a.spec, a.index),
+    'ovl.set': (a) => controller.setOverlay(a.id, a.patch),
+    'ovl.remove': (a) => controller.removeOverlay(a.id),
+    'ovl.move': (a) => controller.moveOverlay(a.id, a.index),
+    'ovl.next': (a) => controller.setOverlayNext(a.id),
+    'ovl.go': (a) => controller.overlayGo((a && a.id) || null),
+    'ovl.off': (a) => controller.overlayOff((a && a.id) || null),
     'playlist.removeEntry': (a) => controller.removeEntry(a.entryId),
     'playlist.moveEntry': (a) => controller.moveEntry(a.entryId, a.groupId, a.index),
     'playlist.setEntry': (a) => controller.setEntry(a.entryId, a.patch),

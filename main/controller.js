@@ -13,6 +13,7 @@ const { describeDisplay } = require('./engine/displays');
 const { Playlist } = require('./playlist');
 const { probeSize } = require('./probe');
 const { installTitleMethods } = require('./controller-titles');
+const { installOverlayMethods, LAYER_GFX, MAX_GFX } = require('./controller-overlays');
 const { ProjectStore, scanMedia, freeName, safeFolderName, safeRelFolder, isInside, toRel } = require('./projects');
 
 const PROGRAM_CHANNEL = 1;
@@ -102,6 +103,7 @@ class Controller extends EventEmitter {
     this.folders = [];
     this.folderError = '';
     this._initTitles();
+    this._initOverlays();
     this._openProject(this.projects.currentId);
     this._ovl = { 1: { bank: 0, ids: [], keys: [] }, 2: { bank: 0, ids: [], keys: [] } }; // plasti na kanalu
     this._ovlGen = 0;
@@ -189,6 +191,7 @@ class Controller extends EventEmitter {
       actions: this.actions ? this.actions.getState() : { devices: [], actions: [] },
       project: this.projectState(),
       titles: this.titlesState(),
+      overlays: this.overlaysState(),
       transitions: TRANSITIONS,
       directions: DIRECTIONS,
       times: this.times,
@@ -648,6 +651,8 @@ class Controller extends EventEmitter {
   }
 
   async _clearAll() {
+    await this.overlayOff().catch(() => {});
+    this.ovlNext = null;
     await this._clearTitles();
     if (this.engine.status === 'running') {
       if (this.program.item) await this.clearProgram(false).catch(() => {});
@@ -976,6 +981,10 @@ class Controller extends EventEmitter {
     this._savePlaylist();
     await this._rearm();
     return added.length;
+  }
+
+  _fps() {
+    return fpsOf(this.settings.videoMode);
   }
 
   /** Ime akcije ali preseta (preset:<id>); null, če ne obstaja. */
@@ -1550,6 +1559,8 @@ class Controller extends EventEmitter {
     if (c.startsWith('group:')) return this.cueGroup(c.slice(6));
     if (c.startsWith('title:')) return this.titleToggle(c.slice(6));
     if (c === 'titlesOff') return this.titlesAllOff();
+    if (c === 'ovlGo') return this.overlayGo();
+    if (c === 'ovlOff') return this.overlayOff();
     this._error(`Neznan ukaz: ${c}`);
   }
 
@@ -2171,6 +2182,7 @@ class Controller extends EventEmitter {
     }
     await this._restoreProgram();
     await this._restoreTitles();
+    await this._restoreOverlays();
     if (this.preview.item) {
       try {
         await this._cue();
@@ -2225,6 +2237,10 @@ class Controller extends EventEmitter {
       return;
     }
     const m = /^\/channel\/(\d+)\/stage\/layer\/(\d+)\/foreground\/file\/(time|path)$/.exec(address);
+    if (m && m[1] === String(PROGRAM_CHANNEL) && m[3] === 'time' && Number(m[2]) >= LAYER_GFX && Number(m[2]) < LAYER_GFX + MAX_GFX) {
+      if (this.ovlLive.size && typeof args[0] === 'number') this._gfxTime(Number(m[2]), args[0], args[1]);
+      return;
+    }
     if (!m || Number(m[2]) !== LAYER_MAIN) return;
     const ch = Number(m[1]);
     if (ch !== PROGRAM_CHANNEL && ch !== PREVIEW_CHANNEL) return;
@@ -2341,5 +2357,6 @@ function samePath(a, b) {
 }
 
 installTitleMethods(Controller);
+installOverlayMethods(Controller);
 
 module.exports = { Controller, DEFAULT_HOTKEYS, fpsOf, samePath, dbToGain, PROGRAM_CHANNEL, PREVIEW_CHANNEL, LAYER_MAIN, MONITOR_CONSUMER, TRANSITIONS };

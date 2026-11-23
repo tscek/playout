@@ -511,3 +511,26 @@ body.resizing { cursor: row-resize; user-select: none; }
 #hotkey-filter { width: 100%; box-sizing: border-box; margin-bottom: 4px; }
 .atem-panels { overflow: auto; flex: 1; min-height: 0; padding: 0 2px; }
 .error.info { background: #1f3d6e; border-color: #3d8bfd; color: #fff; }
+
+/* Seznam "Čez program" (spodaj v playlisti) */
+.ovl-panel { border-top: 2px solid var(--line); display: flex; flex-direction: column; max-height: 42%; min-height: 0; flex-shrink: 0; }
+.ovl-panel.collapsed .ovl-list { display: none; }
+.ovl-panel.dragover { outline: 2px dashed var(--accent); outline-offset: -3px; }
+.ovl-head { gap: 6px; flex-wrap: wrap; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.ovl-head .mini-select { max-width: 150px; }
+.ovl-go { background: var(--amber); color: #1a1a1a; font-weight: 800; }
+.ovl-go:disabled { opacity: .4; }
+.ovl-list { list-style: none; margin: 0; padding: 4px; overflow: auto; min-height: 96px; }
+.ovl-list li { border-radius: 6px; border: 1px solid transparent; cursor: pointer; }
+.ovl-list li:hover { background: var(--panel-2); }
+.ovl-list li.next { border-color: rgba(240,168,48,.6); }
+.ovl-list li.onair { box-shadow: inset 4px 0 0 var(--red); }
+.ovl-list li.missing .name { color: #ff6b6e; text-decoration: line-through; }
+.ovl-list li.drop-before { border-top: 2px solid var(--accent); }
+.ovl-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; }
+.ovl-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-btn-gap { display: inline-block; width: 26px; }
+.type.title { color: #ffd479; }
+.ovl-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 10px 10px 38px; cursor: default; }
+.ovl-detail input[type=range] { width: 110px; }
+.ovl-detail input[type=number] { width: 56px; padding: 3px 4px; }

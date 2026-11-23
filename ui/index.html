@@ -161,6 +161,18 @@
         <button id="btn-add-group" class="btn ghost small">+ Skupina</button>
       </div>
       <div id="groups" class="groups"></div>
+      <div id="ovl-panel" class="ovl-panel">
+        <div class="panel-head ovl-head">
+          <button id="ovl-fold" class="item-btn fold" title="Zloži/razširi">▾</button>
+          <h2 title="Napisi in grafike, ki gredo čez program in ga ne zamenjajo. Imajo svoj NEXT in GO.">Čez program</h2>
+          <select id="ovl-add-title" class="mini-select" title="Dodaj napis v seznam"></select>
+          <select id="ovl-add-media" class="mini-select" title="Dodaj grafiko (video ali sliko, npr. MOV/WebM s prosojnostjo)"></select>
+          <div class="spacer"></div>
+          <button id="ovl-off" class="btn ghost small" title="Vse iz tega seznama dol s programa">Vse dol</button>
+          <button id="ovl-go" class="btn small ovl-go">GO ▶</button>
+        </div>
+        <ul id="ovl-list" class="ovl-list"></ul>
+      </div>
     </section>
     </section>
     <div id="error" class="error error-float hidden"></div>
@@ -455,5 +467,6 @@
   <script src="app.js"></script>
   <script src="actions.js"></script>
   <script src="titles.js"></script>
+  <script src="overlays.js"></script>
 </body>
 </html>
