@@ -1340,3 +1340,89 @@ test('seznam Čez program: napisi in grafike z NEXT/GO', async () => {
     await engine.stop();
   }
 });
+
+test('tabela oseb: vzorec, zastava, slika, klic po številki, GO, kamera', async () => {
+  const http = require('http');
+  const { ActionManager } = require('../main/actions');
+  const { fill, normTable } = require('../main/tables');
+  const { flagCode } = require('../main/controller-tables');
+  assert.strictEqual(flagCode('Slovenija'), 'si');
+  assert.strictEqual(flagCode('SLO'), 'si');
+  assert.strictEqual(flagCode('svn'), 'si');
+  assert.strictEqual(flagCode('Nemčija'), 'de');
+  assert.strictEqual(flagCode('Croatia'), 'hr');
+  assert.strictEqual(flagCode('xx'), null);
+  const tb = normTable({});
+  const row = { id: 'r', num: null, cells: { [tb.columns[0].id]: 'Ana', [tb.columns[1].id]: '' } };
+  tb.rows.push(row);
+  assert.strictEqual(fill('{Ime}, {Funkcija}', tb, row), 'Ana');
+  assert.strictEqual(fill('{#}. {Ime} ({Funkcija})', tb, row), '1. Ana');
+
+  const hits = [];
+  const srv = http.createServer((req, res) => { hits.push(req.url); res.end('ok'); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const { ctl, engine, sent, dir } = makeController();
+  const am = new ActionManager({ file: path.join(dir, 'actions.json') });
+  ctl.actions = am;
+  try {
+    const cam = am.saveAction({ name: 'Kamera govornik', steps: [{ type: 'http', url: `http://127.0.0.1:${srv.address().port}/cam`, method: 'GET' }] });
+    assert.ok(cam);
+    await ctl.init();
+    await waitFor(() => engine.status === 'running');
+    const photo = path.join(dir, 'janez.png');
+    fs.writeFileSync(photo, 'x');
+    ctl.addFiles([photo]);
+    const style = ctl.addTitle({ template: 'l3-crta', f0: 'Vzorec', s0: 1.2 });
+    const tid = ctl.addTable('Govorniki');
+    await ctl.setTable(tid, { styleTitleId: style, map: { f0: '{Ime}', f1: '{Funkcija}, {Klub}' } });
+    const klub = ctl.addColumn(tid, 'Klub', 'text');
+    const t = ctl.tables.get(tid);
+    assert.deepStrictEqual(t.columns.map((c) => c.kind), ['text', 'text', 'flag', 'image', 'action', 'text']);
+    // lepljenje iz Excela: Ime, Funkcija, Država, Slika, Kamera, Klub
+    const paste = [['Janez Novak', 'trener', 'Slovenija', 'janez', 'kamera govornik', 'NK Lipa'], ['Mojca', '', 'HR', '', '', 'AK Lipa']];
+    await ctl.setCells(tid, paste.flatMap((r, ri) => r.map((value, col) => ({ row: ri, col, value }))));
+    await ctl.setCells(tid, [{ row: 1, col: '#', value: '10' }]);
+    assert.strictEqual(t.rows.length, 2);
+    assert.strictEqual(t.rows[1].num, 10);
+    assert.ok(klub);
+
+    hits.length = 0;
+    await ctl.cueRow({ num: 1 });
+    assert.strictEqual(ctl.getState().overlays.nextRow.name, 'Janez Novak');
+    await waitFor(() => sent.some((c) => c.startsWith('CG 2-60 ADD') && c.includes('playout-l3-crta') && c.includes('Janez Novak')));
+    const add = sent.find((c) => c.startsWith('CG 2-60 ADD') && c.includes('Janez Novak'));
+    assert.ok(add.includes('trener, NK Lipa'));
+    assert.ok(add.includes('si.svg'));
+    assert.ok(add.includes('janez.png'));
+    await waitFor(() => hits.includes('/cam')); // kamera ob pripravi
+    await ctl.overlayGo();
+    await waitFor(() => sent.some((c) => /^CG 1-6\d ADD/.test(c) && c.includes('Janez Novak')));
+    assert.strictEqual(ctl.rowCued, null);
+    assert.strictEqual(ctl.getState().overlays.live[0].name, 'Janez Novak');
+
+    await assert.rejects(() => ctl.cueRow({ num: 2 })); // druga vrstica ima številko 10
+    await ctl.cueRow({ num: 10 });
+    await ctl.overlayGo(); // Mojca zamenja Janeza
+    await waitFor(() => sent.some((c) => /^CG 1-6\d ADD/.test(c) && c.includes('Mojca') && c.includes('hr.svg') && c.includes('AK Lipa')));
+    await waitFor(() => ctl.getState().overlays.live.length === 1 && ctl.getState().overlays.live[0].name === 'Mojca', 3000);
+
+    // Popravek podatka v živo se pokaže na programu.
+    const n = sent.length;
+    await ctl.setCells(tid, [{ row: 1, col: 1, value: 'sodnica' }]);
+    assert.ok(sent.slice(n).some((c) => /^CG 1-6\d UPDATE/.test(c) && c.includes('sodnica')));
+
+    await ctl.overlayStep(-1); // puščica: brez pripravljene osebe gre na seznam ali tabelo
+    assert.ok(ctl.rowCued);
+    await ctl.overlayOff();
+    await waitFor(() => ctl.getState().overlays.live.length === 0, 3000);
+    assert.ok(JSON.parse(fs.readFileSync(ctl.tablesFile, 'utf8')).tables.length === 1);
+    await ctl.runCommand('person:10');
+    assert.strictEqual(ctl.getState().overlays.nextRow.num, 10);
+  } finally {
+    await am.stop();
+    ctl._unwatch && ctl._unwatch();
+    await engine.stop();
+    srv.closeAllConnections();
+    srv.close();
+  }
+});

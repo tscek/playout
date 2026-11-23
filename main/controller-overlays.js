@@ -35,8 +35,23 @@ const methods = {
     const lib = new Map(this.library.items.map((x) => [x.id, x]));
     const list = this.playlist.overlays;
     if (this.ovlNext && !list.some((o) => o.id === this.ovlNext)) this.ovlNext = null;
-    return {
+    const live = [];
+    for (const [k, r] of this.ovlLive) {
+      if (r.row) {
+        if (this._titleOnLayer(r.titleId) === null || this._titleClosing(r.titleId)) continue;
+        const t = this.titles.virtual.get(r.titleId);
+        live.push({ id: k, name: t ? t.rowName : k });
+      } else {
+        const o = this.playlist.overlay(k);
+        if (o && this._ovlIsOn(o)) live.push({ id: k, name: null });
+      }
+    }
+    const nextRow = this._nextLabel ? this._nextLabel() : null;
+    const out = {
       next: this.ovlNext,
+      nextKind: nextRow ? 'row' : 'list',
+      nextRow,
+      live,
       items: list.map((o) => {
         let name = '?';
         let type = 'title';
@@ -54,6 +69,8 @@ const methods = {
         return { ...o, name, type, missing, onAir: this._ovlIsOn(o) };
       }),
     };
+    for (const l of live) if (!l.name) l.name = (out.items.find((i) => i.id === l.id) || { name: '?' }).name;
+    return out;
   },
 
   _saveOverlays() {
@@ -96,24 +113,32 @@ const methods = {
   setOverlayNext(id) {
     if (id && !this.playlist.overlay(id)) this._error('Vnos ne obstaja');
     this.ovlNext = id || null;
+    this._nextKind = 'list';
     this._changed();
   },
 
   /** GO: naslednji (ali izbrani) gre čez program; prejšnji iz seznama gre dol, razen če ima "ostane". */
   async overlayGo(id = null) {
+    if (!id && this._nextKind === 'row' && this.rowCued) return this._rowGo();
     const list = this.playlist.overlays;
     const o = list.find((x) => x.id === (id || this.ovlNext));
-    if (!o) this._error('V seznamu Čez program ni naslednjega');
+    if (!o) this._error('Ni naslednjega napisa (izberi v seznamu Čez program ali vpiši številko osebe)');
     this._requireEngine();
-    if (!o.keep) {
-      for (const x of list) {
-        if (x.id !== o.id && !x.keep && this._ovlIsOn(x)) await this.overlayOff(x.id).catch(() => {});
-      }
-    }
+    if (!o.keep) await this._ovlReplace(o.id);
     const i = list.indexOf(o);
     this.ovlNext = list[i + 1] ? list[i + 1].id : null;
     await this._overlayOn(o);
     this._changed();
+  },
+
+  /** Pred novim napisom: dol gredo napisi iz seznama (razen tistih, ki ostanejo) in osebe iz tabel. */
+  async _ovlReplace(exceptId) {
+    for (const x of this.playlist.overlays) {
+      if (x.id !== exceptId && !x.keep && this._ovlIsOn(x)) await this.overlayOff(x.id).catch(() => {});
+    }
+    for (const [k, r] of [...this.ovlLive]) {
+      if (r.row && k !== exceptId) await this.overlayOff(k).catch(() => {});
+    }
   },
 
   async _overlayOn(o) {

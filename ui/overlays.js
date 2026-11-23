@@ -99,26 +99,31 @@ function ovlDetails(o) {
   return box;
 }
 
-/** Razdelek poleg CUT/AUTO: naslednji, GO, DOL in kaj je zdaj čez program. */
+/** Razdelek poleg CUT/AUTO: naslednji (oseba ali vnos seznama), GO, DOL in kaj je zdaj čez program. */
 function renderGfxBox() {
   if (!$('#gfx-box')) return;
   const S = ovlSt();
   const hk = (state.settings && state.settings.hotkeys) || {};
   const nx = S.items.find((o) => o.id === S.next);
-  const i = nx ? S.items.indexOf(nx) : -1;
+  const row = S.nextRow;
   const box = $('#gfx-next');
   box.innerHTML = '';
-  if (nx) box.append(document.createTextNode(`Naslednji ${i + 1}: `), el('b', '', nx.name));
-  else box.textContent = S.items.length ? 'Naslednji: — (izberi v seznamu ali ◀ ▶)' : 'Seznam Čez program je prazen (spodaj v playlisti).';
-  box.title = nx ? nx.name : '';
-  const on = S.items.filter((o) => o.onAir);
-  $('#gfx-go').disabled = !nx;
+  if (row) {
+    box.append(document.createTextNode(`Oseba ${row.num}: `), el('b', '', row.name));
+    box.title = `${row.name} (tabela ${row.table})`;
+  } else if (nx) {
+    box.append(document.createTextNode(`Naslednji ${S.items.indexOf(nx) + 1}: `), el('b', '', nx.name));
+    box.title = nx.name;
+  } else {
+    box.textContent = 'Naslednji: — (vpiši številko osebe ali izberi v seznamu)';
+    box.title = '';
+  }
+  const on = S.live || [];
+  $('#gfx-go').disabled = !nx && !row;
   $('#gfx-go').querySelector('small').textContent = accLabel(hk.ovlGo) || 'napis';
   $('#gfx-off').disabled = !on.length;
   $('#gfx-off').classList.toggle('live', !!on.length);
   $('#gfx-off').querySelector('small').textContent = accLabel(hk.ovlOff) || (on.length > 1 ? `vse (${on.length})` : 'vse');
-  $('#gfx-prev').disabled = !S.items.length;
-  $('#gfx-nextb').disabled = !S.items.length;
   const onBox = $('#gfx-on');
   onBox.innerHTML = '';
   for (const o of on) {
@@ -130,11 +135,7 @@ function renderGfxBox() {
 }
 
 function ovlStep(dir) {
-  const S = ovlSt();
-  if (!S.items.length) return;
-  const i = S.items.findIndex((o) => o.id === S.next);
-  const j = i === -1 ? (dir > 0 ? 0 : S.items.length - 1) : Math.max(0, Math.min(S.items.length - 1, i + dir));
-  run('ovl.next', { id: S.items[j].id });
+  run('ovl.step', { dir });
 }
 
 function renderOverlays() {

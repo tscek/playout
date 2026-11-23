@@ -62,6 +62,7 @@
             <button class="tbtn" id="gfx-prev" title="Prejšnji v seznamu postane naslednji">◀</button>
             <button class="tbtn" id="gfx-nextb" title="Naslednji v seznamu">▶</button></div>
           <div class="gfx-next" id="gfx-next">Naslednji: —</div>
+          <input id="gfx-num" class="text-input gfx-num" inputmode="numeric" placeholder="št. osebe + Enter" title="Številka osebe iz tabele (zavihek Osebe). Kadar okno nima izbranega polja, lahko številko kar vtipkaš.">
           <div class="gfx-btns">
             <button id="gfx-go" class="btn take-btn gfx-go">GO<small></small></button>
             <button id="gfx-off" class="btn take-btn gfx-off">DOL<small></small></button>
@@ -119,7 +120,7 @@
     <section class="bottom">
     <section class="panel library">
       <div class="panel-head">
-        <span class="left-tabs" id="left-tabs"><button data-t="media" class="on">Mediji</button><button data-t="titles">Napisi <span id="titles-onair-count" class="tab-count hidden"></span></button><button data-t="atem">ATEM</button><button data-t="ptz">PTZ</button></span>
+        <span class="left-tabs" id="left-tabs"><button data-t="media" class="on">Mediji</button><button data-t="titles">Napisi <span id="titles-onair-count" class="tab-count hidden"></span></button><button data-t="people">Osebe</button><button data-t="atem">ATEM</button><button data-t="ptz">PTZ</button></span>
         <span class="hint-inline" id="lib-hint"></span>
         <div class="spacer"></div>
         <button id="btn-add" class="btn">+ Dodaj medije</button>
@@ -158,6 +159,17 @@
         </div>
         <ul id="titles" class="library-list titles-list"></ul>
         <div id="title-edit" class="title-edit hidden"></div>
+      </div>
+      <div class="tab-pane hidden" id="tab-people">
+        <div class="pp-bar">
+          <select id="pp-table" class="mini-select" title="Tabela"></select>
+          <button id="pp-new" class="btn ghost small" title="Nova tabela">+</button>
+          <button id="pp-edit" class="btn small" title="Odpri tabelo za urejanje (kot Excel): stolpci, podatki, napis">✎ Uredi tabelo</button>
+          <div class="spacer"></div>
+          <input id="pp-num" class="text-input pp-num" inputmode="numeric" placeholder="št." title="Vpiši številko osebe in Enter: pripravi njen napis (GO ga da na program)">
+          <input id="pp-search" class="text-input pp-search" placeholder="Išči ...">
+        </div>
+        <div id="pp-list" class="pp-list"></div>
       </div>
       <div class="tab-pane hidden" id="tab-atem"><div id="atem-panels" class="atem-panels"></div></div>
       <div class="tab-pane hidden" id="tab-ptz"><div id="ptz-panels" class="atem-panels"></div></div>
@@ -280,6 +292,29 @@
       <button type="button" id="btn-test-media" class="btn ghost small">Dodaj testne posnetke (sinhronizacija slike in zvoka)</button>
       <button type="button" id="btn-open-logs" class="btn ghost small">Odpri mapo z dnevniki motorja</button>
     </form>
+  </dialog>
+
+  <dialog id="dlg-table" class="dialog table-dlg">
+    <div class="tb-head">
+      <input id="tb-name" class="text-input tb-name" maxlength="60" title="Ime tabele">
+      <div class="spacer"></div>
+      <button id="tb-import" class="btn ghost small" title="Uvozi CSV (iz Excela: Shrani kot CSV). Prva vrstica so imena stolpcev.">Uvozi CSV</button>
+      <button id="tb-export" class="btn ghost small">Izvozi CSV</button>
+      <button id="tb-delete" class="btn ghost small danger-text" title="Izbriši celo tabelo">Izbriši tabelo</button>
+      <button id="tb-close" class="btn">Zapri</button>
+      <input id="tb-file" type="file" accept=".csv,.txt,.tsv" class="hidden">
+    </div>
+    <div class="tb-cfg" id="tb-cfg"></div>
+    <div class="tb-tools">
+      <button id="tb-addrow" class="btn ghost small">+ vrstica</button>
+      <button id="tb-addcol" class="btn ghost small">+ stolpec</button>
+      <button id="tb-delrows" class="btn ghost small">Izbriši izbrane vrstice</button>
+      <span class="hint-inline">Klikni celico in piši. Ctrl+C / Ctrl+V kopira in prilepi (tudi iz Excela), Delete pobriše, Shift+klik izbere več celic. Dvoklik na vrstico = pripravi napis.</span>
+    </div>
+    <div class="tb-wrap" id="tb-wrap"><table class="tb-grid" id="tb-grid" tabindex="0"></table></div>
+    <datalist id="tb-dl-media"></datalist>
+    <datalist id="tb-dl-action"></datalist>
+    <datalist id="tb-dl-flag"></datalist>
   </dialog>
 
   <dialog id="dlg-entry" class="dialog entry-dlg">
@@ -479,5 +514,6 @@
   <script src="actions.js"></script>
   <script src="titles.js"></script>
   <script src="overlays.js"></script>
+  <script src="tables.js"></script>
 </body>
 </html>

@@ -243,15 +243,20 @@ function renderPlaylist() {
 }
 
 function renderGfx() {
-  const O = state.overlays || { items: [], next: null };
-  $('#r-gfx').classList.toggle('hidden', !O.items.length);
+  const O = state.overlays || { items: [], next: null, live: [] };
+  const hasTables = !!(state.tables && state.tables.tables.length);
+  $('#r-gfx').classList.toggle('hidden', !O.items.length && !hasTables);
+  $('#r-kp-row').classList.toggle('hidden', !hasTables);
+  if (!hasTables) $('#r-kp').classList.add('hidden');
   const nx = O.items.find((o) => o.id === O.next);
+  const row = O.nextRow;
   const box = $('#r-gfx-next');
   box.innerHTML = '';
-  if (nx) box.append(document.createTextNode(`Naslednji ${O.items.indexOf(nx) + 1}: `), el('b', '', nx.name));
+  if (row) box.append(document.createTextNode(`Oseba ${row.num}: `), el('b', '', row.name));
+  else if (nx) box.append(document.createTextNode(`Naslednji ${O.items.indexOf(nx) + 1}: `), el('b', '', nx.name));
   else box.textContent = 'Napis: ni naslednjega';
-  const on = O.items.filter((o) => o.onAir).length;
-  $('#r-gfx-go').disabled = !nx;
+  const on = (O.live || []).length;
+  $('#r-gfx-go').disabled = !nx && !row;
   $('#r-gfx-off').disabled = !on;
   $('#r-gfx-off').classList.toggle('live', !!on);
 }
@@ -375,15 +380,22 @@ setTab(tab);
 $('#r-cut').onclick = () => run('take.cut');
 $('#r-gfx-go').onclick = () => run('ovl.go');
 $('#r-gfx-off').onclick = () => run('ovl.off');
-const gfxStep = (dir) => {
-  const O = state && state.overlays;
-  if (!O || !O.items.length) return;
-  const i = O.items.findIndex((o) => o.id === O.next);
-  const j = i === -1 ? (dir > 0 ? 0 : O.items.length - 1) : Math.max(0, Math.min(O.items.length - 1, i + dir));
-  run('ovl.next', { id: O.items[j].id });
-};
-$('#r-gfx-prev').onclick = () => gfxStep(-1);
-$('#r-gfx-nextb').onclick = () => gfxStep(1);
+$('#r-gfx-prev').onclick = () => run('ovl.step', { dir: -1 });
+$('#r-gfx-nextb').onclick = () => run('ovl.step', { dir: 1 });
+let kpVal = '';
+const kpShow = () => { $('#r-kp-disp').textContent = kpVal; };
+$('#r-kp-toggle').onclick = () => $('#r-kp').classList.toggle('hidden');
+for (const b of document.querySelectorAll('#r-kp button')) {
+  b.onclick = () => {
+    const k = b.dataset.k;
+    if (k === 'del') kpVal = kpVal.slice(0, -1);
+    else if (k === 'ok') {
+      if (kpVal) run('tables.cue', { num: Number(kpVal) });
+      kpVal = '';
+    } else if (kpVal.length < 5) kpVal += b.textContent;
+    kpShow();
+  };
+}
 $('#r-auto').onclick = () => run('take.auto');
 $('#r-prev').onclick = () => run('remote.command', { cmd: 'prev' });
 $('#r-next').onclick = () => run('remote.command', { cmd: 'next' });

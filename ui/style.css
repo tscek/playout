@@ -550,3 +550,53 @@ body.resizing { cursor: row-resize; user-select: none; }
 .gfx-on { font-size: 11px; color: #ff8a8c; display: grid; gap: 2px; }
 .gfx-on:empty { display: none; }
 .gfx-on div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+
+/* Osebe (tabele za napise) */
+.gfx-num { width: 100%; box-sizing: border-box; padding: 5px 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.pp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.pp-num { width: 70px; font-size: 16px; text-align: center; }
+.pp-search { width: 140px; }
+.pp-list { overflow: auto; flex: 1; padding: 6px; display: grid; gap: 4px; align-content: start; }
+.pp-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; background: var(--panel-2); }
+.pp-row:hover { border-color: var(--line); }
+.pp-row.cued { border-color: var(--amber); }
+.pp-row.live { box-shadow: inset 4px 0 0 var(--red); }
+.pp-n { min-width: 30px; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--amber); font-size: 16px; }
+.pp-flag { width: 26px; height: auto; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.4); }
+.pp-tx { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.pp-tx b, .pp-tx small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-tx small { color: var(--muted); }
+#tab-people { display: flex; flex-direction: column; min-height: 0; }
+#tab-people.hidden { display: none; }
+
+.table-dlg { width: min(1500px, 96vw); height: min(900px, 92vh); max-width: none; display: flex; flex-direction: column; padding: 0; }
+.table-dlg:not([open]) { display: none; }
+.tb-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.tb-name { font-size: 16px; font-weight: 700; width: 260px; }
+.danger-text { color: #ff6b6e; }
+.tb-cfg { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+.tb-opt { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.tb-opt .mini-select { max-width: 260px; }
+.tb-map { width: 190px; }
+.tb-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.tb-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 14px; }
+.tb-wrap { flex: 1; overflow: auto; margin: 0 14px 14px; border: 1px solid var(--line); border-radius: 6px; }
+.tb-grid { border-collapse: collapse; font-size: 13px; outline: none; user-select: none; }
+.tb-grid th { position: sticky; top: 0; z-index: 1; background: var(--panel); border: 1px solid var(--line); padding: 4px; text-align: left; vertical-align: top; min-width: 150px; }
+.tb-grid th.tb-go, .tb-grid th.tb-num { min-width: 0; }
+.tb-colname { width: 100%; box-sizing: border-box; font-weight: 700; background: transparent; border: 1px solid transparent; color: inherit; padding: 2px 4px; }
+.tb-colname:focus { border-color: var(--accent); background: var(--panel-2); }
+.tb-kind { width: 100%; margin-top: 3px; font-size: 11px; }
+.tb-coltools { display: flex; gap: 2px; margin-top: 3px; }
+.tb-grid td { border: 1px solid var(--line); padding: 4px 6px; height: 22px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; cursor: cell; }
+.tb-grid td.tb-num { width: 44px; text-align: right; color: var(--amber); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tb-grid td.tb-num.auto { color: var(--muted); font-weight: 400; }
+.tb-grid td.tb-go { width: 30px; padding: 0 2px; border: 0; cursor: default; }
+.tb-grid td.sel { background: rgba(80,140,255,.18); }
+.tb-grid td.cur { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tb-grid tr.cued td.tb-num { background: rgba(240,168,48,.25); }
+.tb-grid tr.live td.tb-num { background: rgba(229,56,59,.35); }
+.tb-grid td.k-action { color: #e8a0ff; }
+.tb-grid td.k-image { color: #a8e6a1; }
+.tb-flag { width: 20px; height: auto; vertical-align: -3px; margin-right: 5px; border-radius: 2px; }
+.tb-input { width: 100%; box-sizing: border-box; border: 0; padding: 0; font: inherit; background: var(--panel-2); color: inherit; outline: none; min-width: 120px; }

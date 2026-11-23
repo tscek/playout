@@ -1283,6 +1283,7 @@ function render() {
   if (typeof renderActions === 'function') renderActions();
   if (typeof renderTitles === 'function') renderTitles();
   if (typeof renderOverlays === 'function') renderOverlays();
+  if (typeof renderTables === 'function') renderTables();
   AtemPanel.render($('#atem-panels'), (state.actions && state.actions.devices) || [],
     (deviceId, step) => run('atem.run', { deviceId, step }));
   PtzPanel.render($('#ptz-panels'), (state.actions && state.actions.devices) || [], {
@@ -1607,7 +1608,7 @@ const HOTKEY_LABEL = {
   stepBackSec: 'Preview: sekunda nazaj', stepFwdSec: 'Preview: sekunda naprej',
   panic: 'PANIKA (vklop/izklop)', pause: 'Program: predvajaj/ustavi', fadeclear: 'Program: zatemni',
   titlesOff: 'Napisi: vsi dol',
-  ovlGo: 'Čez program: GO (naslednji)', ovlOff: 'Čez program: vse dol',
+  ovlGo: 'Napis: GO (naslednji)', ovlOff: 'Napis: vse dol', ovlNext: 'Napis: naslednji (oseba ali seznam)', ovlPrev: 'Napis: prejšnji',
 };
 
 function runHotkey(cmd) {
@@ -1626,6 +1627,7 @@ function runHotkey(cmd) {
   else if (cmd === 'titlesOff') run('titles.allOff');
   else if (cmd === 'ovlGo') run('ovl.go');
   else if (cmd === 'ovlOff') run('ovl.off');
+  else if (cmd === 'ovlNext' || cmd === 'ovlPrev') run('ovl.step', { dir: cmd === 'ovlNext' ? 1 : -1 });
   else if (cmd.startsWith('preset:')) run('actions.run', { id: cmd });
 }
 

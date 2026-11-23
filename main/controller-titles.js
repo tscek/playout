@@ -130,7 +130,14 @@ const methods = {
       bg: t.bg || b.bg, accent: t.accent || b.accent, text: t.text || b.text, font: t.font || b.font, logo,
       mode: t.mode, target: t.target, seconds: t.seconds,
       s0: t.s0, s1: t.s1, text2: t.text2 || '', upper: t.upper, image, imageType,
+      flag: t.flag ? this._flagUrl(t.flag) : '',
     };
+  },
+
+  /** Naslov slike zastave (koda kot v flag-icons, npr. si, gb-eng). */
+  _flagUrl(code) {
+    const dir = this.templateDir ? path.join(this.templateDir, 'playout-flags') : path.join(__dirname, 'gfx', 'flags');
+    return pathToFileURL(path.join(dir, `${code}.svg`)).href;
   },
 
   /** Pošlje napis in nastavi njegovo velikost (MIXER FILL okoli roba, kjer napis stoji). */
@@ -181,6 +188,8 @@ const methods = {
     // samo položaj/velikost: brez ponovnega pošiljanja besedila (drsnik v živo)
     const geom = Object.keys(patch).every((k) => ['posX', 'posY', 'size'].includes(k));
     await this._refreshTitle(t, t.template !== old, geom);
+    // osebe iz tabel, ki uporabljajo ta napis kot vzorec, se osvežijo
+    if (this.tables) for (const tb of this.tables.tables) if (tb.styleTitleId === id) await this._refreshRows(tb.id);
   },
 
   async removeTitle(id) {
@@ -188,6 +197,10 @@ const methods = {
     if (this.titlePvw === id) await this.titlePreview(null);
     this.titles.remove(id);
     this._saveTitles();
+    if (this.tables) {
+      this.tables.forgetTitle(id);
+      this._saveTables();
+    }
     this._changed();
   },
 

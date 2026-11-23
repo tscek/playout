@@ -14,7 +14,7 @@ const LAN_PORT = 8090;
 /** Ukazi, ki jih sme poslati tablica (nič, kar briše datoteke ali spreminja nastavitve računalnika). */
 const REMOTE_ACTIONS = new Set([
   'state.get', 'take.cut', 'take.auto', 'preview.load', 'preview.clear', 'program.clear', 'program.panic', 'program.direct',
-  'playlist.cueGroup', 'seek', 'step', 'playPause', 'media.volume', 'media.mute', 'actions.run', 'ovl.go', 'ovl.off', 'ovl.next',
+  'playlist.cueGroup', 'seek', 'step', 'playPause', 'media.volume', 'media.mute', 'actions.run', 'ovl.go', 'ovl.off', 'ovl.next', 'ovl.step', 'tables.cue', 'tables.uncue', 'tables.active',
   'titles.on', 'titles.off', 'titles.toggle', 'titles.allOff', 'titles.preview', 'remote.command', 'atem.run', 'device.run', 'ptz.move',
 ]);
 
@@ -94,8 +94,12 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     }
     if (urlPath === '/') urlPath = '/index.html';
     if (urlPath === '/remote') urlPath = '/remote.html';
-    const file = path.normalize(path.join(uiDir, urlPath));
-    if (!file.startsWith(path.normalize(uiDir))) {
+    // zastave za tabelo oseb (iz predlog napisov)
+    const flag = /^\/flags\/([a-z]{2}(?:-[a-z]{2,4})?|[a-z]{2,6})\.svg$/.exec(urlPath);
+    const root = flag ? path.join(__dirname, 'gfx', 'flags') : uiDir;
+    if (flag) urlPath = `/${flag[1]}.svg`;
+    const file = path.normalize(path.join(root, urlPath));
+    if (!file.startsWith(path.normalize(root))) {
       res.writeHead(403).end();
       return;
     }
@@ -106,7 +110,7 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       }
       res.writeHead(200, {
         'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
-        'Cache-Control': 'no-store',
+        'Cache-Control': flag ? 'max-age=86400' : 'no-store',
       });
       res.end(data);
     });
@@ -134,6 +138,9 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
       else if (cmd === 'titles' && parts[1] === 'off') cmd = 'titlesOff';
       else if (cmd === 'overlay' && parts[1] === 'go') cmd = 'ovlGo';
       else if (cmd === 'overlay' && parts[1] === 'off') cmd = 'ovlOff';
+      else if (cmd === 'overlay' && parts[1] === 'next') cmd = 'ovlNext';
+      else if (cmd === 'overlay' && parts[1] === 'prev') cmd = 'ovlPrev';
+      else if (cmd === 'person' && parts[1]) cmd = `person:${parseInt(parts[1], 10)}`;
       else if (cmd === 'preset') {
         // /api/preset/<id> ali /api/preset/<naprava>/<ime preseta>, npr. /api/preset/ATEM/AUTO → Kamera 1
         const key = parts.slice(1).join('/');
@@ -274,6 +281,21 @@ function createServer({ controller, uiDir, port, host = '127.0.0.1', extraAction
     'ovl.next': (a) => controller.setOverlayNext(a.id),
     'ovl.go': (a) => controller.overlayGo((a && a.id) || null),
     'ovl.off': (a) => controller.overlayOff((a && a.id) || null),
+    'ovl.step': (a) => controller.overlayStep(a.dir),
+    'tables.add': (a) => controller.addTable(a && a.name),
+    'tables.remove': (a) => controller.removeTable(a.id),
+    'tables.active': (a) => controller.setActiveTable(a.id),
+    'tables.set': (a) => controller.setTable(a.id, a.patch),
+    'tables.addColumn': (a) => controller.addColumn(a.id, a.name, a.kind),
+    'tables.setColumn': (a) => controller.setColumn(a.id, a.colId, a.patch),
+    'tables.removeColumn': (a) => controller.removeColumn(a.id, a.colId),
+    'tables.moveColumn': (a) => controller.moveColumn(a.id, a.colId, a.index),
+    'tables.addRows': (a) => controller.addRows(a.id, a.count, a.index),
+    'tables.removeRows': (a) => controller.removeRows(a.id, a.rowIds),
+    'tables.moveRow': (a) => controller.moveRow(a.id, a.rowId, a.index),
+    'tables.setCells': (a) => controller.setCells(a.id, a.cells),
+    'tables.cue': (a) => controller.cueRow(a || {}),
+    'tables.uncue': () => controller._uncueRow(),
     'playlist.removeEntry': (a) => controller.removeEntry(a.entryId),
     'playlist.moveEntry': (a) => controller.moveEntry(a.entryId, a.groupId, a.index),
     'playlist.setEntry': (a) => controller.setEntry(a.entryId, a.patch),

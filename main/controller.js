@@ -14,6 +14,7 @@ const { Playlist } = require('./playlist');
 const { probeSize } = require('./probe');
 const { installTitleMethods } = require('./controller-titles');
 const { installOverlayMethods, LAYER_GFX, MAX_GFX } = require('./controller-overlays');
+const { installTableMethods } = require('./controller-tables');
 const { ProjectStore, scanMedia, freeName, safeFolderName, safeRelFolder, isInside, toRel } = require('./projects');
 
 const PROGRAM_CHANNEL = 1;
@@ -192,6 +193,7 @@ class Controller extends EventEmitter {
       project: this.projectState(),
       titles: this.titlesState(),
       overlays: this.overlaysState(),
+      tables: this.tablesState(),
       transitions: TRANSITIONS,
       directions: DIRECTIONS,
       times: this.times,
@@ -496,6 +498,7 @@ class Controller extends EventEmitter {
     this.playlist = new Playlist(readJson(this.playlistFile, null));
     this._migrateLook();
     this._openTitles(dir);
+    this._openTables(dir);
     this.settings.panicSource = this.project.panicSource || '';
     this.folders = [];
     this.folderError = '';
@@ -653,6 +656,8 @@ class Controller extends EventEmitter {
   async _clearAll() {
     await this.overlayOff().catch(() => {});
     this.ovlNext = null;
+    this.rowCued = null;
+    this._nextKind = 'list';
     await this._clearTitles();
     if (this.engine.status === 'running') {
       if (this.program.item) await this.clearProgram(false).catch(() => {});
@@ -843,6 +848,7 @@ class Controller extends EventEmitter {
       }),
       playlist: this.playlist.toJSON(),
       titles: this.titles.toJSON(),
+      tables: this.tables.toJSON(),
       brand: this.project.brand,
       actions: this.actions ? { devices: this.actions.devices, actions: this.actions.actions } : null,
     };
@@ -881,6 +887,7 @@ class Controller extends EventEmitter {
     if (data.brand) meta.brand = data.brand;
     this.projects.saveMeta(id, meta);
     if (data.titles) writeJson(path.join(dir, 'titles.json'), data.titles);
+    if (data.tables) writeJson(path.join(dir, 'tables.json'), data.tables);
     // Akcije in naprave, ki jih na tem računalniku še ni, se dodajo (IP naslove popraviš v Akcijah).
     if (this.actions && data.actions) {
       for (const d of data.actions.devices || []) {
@@ -1561,6 +1568,8 @@ class Controller extends EventEmitter {
     if (c === 'titlesOff') return this.titlesAllOff();
     if (c === 'ovlGo') return this.overlayGo();
     if (c === 'ovlOff') return this.overlayOff();
+    if (c === 'ovlNext' || c === 'ovlPrev') return this.overlayStep(c === 'ovlNext' ? 1 : -1);
+    if (c.startsWith('person:')) return this.cueRow({ num: Number(c.slice(7)) });
     this._error(`Neznan ukaz: ${c}`);
   }
 
@@ -2358,5 +2367,6 @@ function samePath(a, b) {
 
 installTitleMethods(Controller);
 installOverlayMethods(Controller);
+installTableMethods(Controller);
 
 module.exports = { Controller, DEFAULT_HOTKEYS, fpsOf, samePath, dbToGain, PROGRAM_CHANNEL, PREVIEW_CHANNEL, LAYER_MAIN, MONITOR_CONSUMER, TRANSITIONS };

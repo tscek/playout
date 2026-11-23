@@ -227,6 +227,7 @@ class Titles {
   constructor(data) {
     const items = data && Array.isArray(data.items) ? data.items : [];
     this.items = items.slice(0, 500).map(normTitle);
+    this.virtual = new Map(); // napisi iz vrstic tabel (niso v seznamu, ne shranijo se)
   }
 
   toJSON() {
@@ -234,7 +235,7 @@ class Titles {
   }
 
   get(id) {
-    return this.items.find((t) => t.id === id) || null;
+    return this.items.find((t) => t.id === id) || this.virtual.get(id) || null;
   }
 
   add(patch = {}, afterId = null) {
@@ -296,6 +297,7 @@ const COMMON_SNIPPET = `<style id="playout-common">
 #f1 { font-size: calc(1em * var(--s1, 1)); }
 html.pl-t2 #f1 { color: var(--text2) !important; }
 html.pl-up #f0 { text-transform: uppercase; }
+.pl-flag { height: .8em; width: auto; margin-right: .32em; vertical-align: -.06em; border-radius: .08em; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
 </style>
 <script>
 (function () {
@@ -310,7 +312,17 @@ html.pl-up #f0 { text-transform: uppercase; }
     if (d.text2) r.style.setProperty('--text2', d.text2);
     r.classList.toggle('pl-t2', !!d.text2);
     r.classList.toggle('pl-up', !!d.upper);
-    if (orig) return orig(s);
+    var out = orig ? orig(s) : undefined;
+    var f0 = document.getElementById('f0');
+    if (f0 && f0.parentNode) {
+      var img = document.getElementById('pl-flag');
+      if (d.flag) {
+        if (!img) { img = document.createElement('img'); img.id = 'pl-flag'; img.className = 'pl-flag'; }
+        if (img.getAttribute('src') !== d.flag) img.src = d.flag;
+        if (img.nextSibling !== f0) f0.parentNode.insertBefore(img, f0);
+      } else if (img) img.remove();
+    }
+    return out;
   };
 })();
 </script>
@@ -344,6 +356,20 @@ function installTemplates(targetDir) {
     } catch { /* še ne obstaja */ }
     if (!same) fs.writeFileSync(dst, data);
   }
+  // Zastave (flag-icons, MIT) za napise iz tabel: kopija ob predlogah, ker motor ne bere iz arhiva aplikacije.
+  const flagsSrc = path.join(src, 'flags');
+  const flagsDst = path.join(targetDir, 'playout-flags');
+  try {
+    const files = fs.readdirSync(flagsSrc);
+    let have = [];
+    try {
+      have = fs.readdirSync(flagsDst);
+    } catch { /* še ni */ }
+    if (have.length < files.length) {
+      fs.mkdirSync(flagsDst, { recursive: true });
+      for (const f of files) if (!have.includes(f)) fs.copyFileSync(path.join(flagsSrc, f), path.join(flagsDst, f));
+    }
+  } catch { /* brez zastav */ }
 }
 
 module.exports = { CLOCK_MODES, TEMPLATES, FONTS, DEFAULT_BRAND, normBrand, normTitle, Titles, titleLabel, templateOf, installTemplates,

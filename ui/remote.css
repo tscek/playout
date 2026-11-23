@@ -105,3 +105,8 @@ button.small { padding: 6px 10px; font-size: 13px; }
 .big.gfxgo { background: #f0a830; color: #1a1a1a; font-size: 22px; }
 .big.gfxoff { background: #55303a; font-size: 22px; }
 .big.gfxoff.live { background: #b3262a; }
+.kp-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 14px; color: var(--muted); }
+.kp-disp { flex: 1; min-height: 30px; font-size: 24px; font-weight: 800; color: #f0a830; font-variant-numeric: tabular-nums; }
+.kp { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.kp button { font-size: 24px; padding: 14px 0; }
+.kp .kp-ok { background: #f0a830; color: #1a1a1a; font-size: 18px; font-weight: 800; }

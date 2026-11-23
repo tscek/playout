@@ -1,3 +1,28 @@
+# Test v0.17.0: osebe (tabele za napise), GO in DOL poleg CUT/AUTO
+
+Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.16.0 (opis spodaj).
+
+1. **NAPIS / GRAFIKA poleg CUT in AUTO**: pokaže, kaj je naslednje (oseba ali vnos iz seznama Čez program).
+   **GO** da napis na program, **DOL** umakne vse, ◀ ▶ izbereta prejšnjega ali naslednjega. Pod gumboma je seznam, kaj je zdaj
+   na programu (klik na vrstico = samo ta dol). V polje *št. osebe* vpišeš številko in Enter. Številko lahko kar vtipkaš,
+   kadar ni izbrano nobeno polje. Bližnjice v Nastavitvah: *Napis: GO*, *vse dol*, *naslednji*, *prejšnji*.
+2. **Zavihek Osebe** (levo spodaj): tabele oseb. **+** naredi novo tabelo, **✎ Uredi tabelo** jo odpre kot Excel:
+   - piši kar v celice; Ctrl+C / Ctrl+V kopira in prilepi (tudi več vrstic in stolpcev iz Excela ali Google Sheets),
+     Delete pobriše, Shift+klik ali vlečenje izbere več celic, Enter potrdi, Tab gre desno;
+   - stolpci: ime in vrsta (besedilo, država (zastava), slika iz Medijev, kamera / akcija); dodaš jih z **+ stolpec**;
+   - stolpec **#**: številka za klic. Prazno = zaporedna, lahko pa vpišeš svojo (npr. 10);
+   - **Država**: ime ali koda (Slovenija, SLO, SI, Croatia ...). Napis pokaže zastavo (deluje brez interneta);
+   - **Slika**: ime slike iz Medijev (npr. fotografija ali grb), napis jo pokaže kot logotip;
+   - **Kamera**: ime akcije ali preseta (npr. PTZ preset za to osebo); sproži se ob pripravi, ob GO ali nikoli (nastavitev zgoraj);
+   - zgoraj izbereš **napis-vzorec** (predloga, barve, velikost, položaj iz zavihka Napisi) in kaj gre v naslov in podnaslov,
+     npr. naslov `{Ime}`, podnaslov `{Funkcija}, {Klub}` (prazni stolpci ne pustijo odvečnih vejic);
+   - Uvozi / Izvozi CSV (Excel: *Shrani kot CSV*).
+3. **V živo**: v zavihku Osebe klik na osebo = pripravi (vidiš jo v preview), dvoklik = takoj na program.
+   Vpis številke + Enter = pripravi, GO = na program. Nova oseba zamenja prejšnjo. Če popraviš podatek, ko je napis na programu,
+   se popravi takoj.
+4. **Tablica**: v razdelku napisov je 🔢 številčnica: vpiši številko in *Pripravi*, nato GO.
+5. Companion: `/api/person/10` pripravi osebo 10, `/api/overlay/go`, `/api/overlay/off`, `/api/overlay/next`.
+
 # Test v0.16.0: potek prireditve (akcije v playlisti, seznam Čez program), novi napisi
 
 Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.15.1 (opis spodaj).
