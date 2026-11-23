@@ -108,8 +108,6 @@ class Controller extends EventEmitter {
     this._baseMix = {}; // zadnje poslane barve osnovnega posnetka po kanalih
     this._blur = {}; // kanal -> pot slike, ki je zamegljena v ozadju (plast 9)
     this._blurBg = null; // zamegljeno ozadje, pripravljeno v ozadju programa (za takojšen CUT)
-    this._kb = null; // dinamični zoom na programu: null = brez, 'zoom' / 'base' = trenutni cilj
-    this._kbStep = 0;
     // src = { groupId, entryId }, če je posnetek prišel iz playliste
     this.program = { item: null, startedAt: 0, src: null }; // kaj je na programu
     this.preview = { item: null, src: null, seek: 0 }; // kaj je v preview
@@ -441,6 +439,10 @@ class Controller extends EventEmitter {
     if (e.fit) out.fit = e.fit;
     else if (f && f.group.blur && item.type === 'image') out.fit = 'blur';
     out.kenBurns = !!(f && f.group.kenBurns && item.type === 'image');
+    if (out.kenBurns) {
+      out.kbIndex = f.group.items.indexOf(f.entry); // smer zooma se menja od slike do slike
+      out.kbSeconds = (e.seconds || f.group.imageSeconds || 5) + (Number(this.settings.transitionFrames) || 0) / fpsOf(this.settings.videoMode);
+    }
     delete out.inSec;
     delete out.outSec;
     return out;
@@ -927,7 +929,7 @@ class Controller extends EventEmitter {
     for (const sl of [this.preview, this.program]) {
       if (sl.item && sl.src && sl.src.groupId === groupId) sl.item = this._slotItem(this._item(sl.item.id), sl.src);
     }
-    if (patch && 'blur' in patch && this.preview.src && this.preview.src.groupId === groupId && this.engine.status === 'running') {
+    if (patch && ['blur', 'kenBurns', 'imageSeconds'].some((k) => k in patch) && this.preview.src && this.preview.src.groupId === groupId && this.engine.status === 'running') {
       this.preview.seek = this._previewPosFrames();
       await this._cue().catch(() => {});
     }
@@ -1209,9 +1211,26 @@ class Controller extends EventEmitter {
     return f;
   }
 
+  /**
+   * Dinamični zoom (Ken Burns): zoom je del slike same (vsaka slika se približuje po svoje),
+   * zato med prelivom prejšnja slika teče naprej in nič ne poskoči. Smer (proti sredini, kotom ...) se menja.
+   */
+  _kbFilter(item, fit) {
+    if (!item.kenBurns || item.type !== 'image') return fit;
+    const fps = fpsOf(this.settings.videoMode);
+    const N = Math.max(1, Math.round((item.kbSeconds || 5) * fps));
+    const Z = 0.12;
+    const anchors = [[0.5, 0.5], [0, 0], [1, 1], [1, 0], [0, 1], [0.5, 0.2]];
+    const [ax, ay] = anchors[Math.max(0, item.kbIndex || 0) % anchors.length];
+    const base = fit || 'scale=1920:1080,setsar=1';
+    return `${base},loop=loop=-1:size=1,setpts=N/${fps}/TB,`
+      + `scale=w='trunc(1920*(1+${Z}*min(n/${N}\,1))/2)*2':h=-2:eval=frame,`
+      + `crop=1920:1080:x='(iw-ow)*${ax}':y='(ih-oh)*${ay}',setsar=1`;
+  }
+
   /** Pot, ki jo dobi motor. Slika s prileganjem gre skozi ffmpeg (kopija s končnico .still). */
   _playPath(item) {
-    if (item.type !== 'image' || !this._fitFilter(item)) return item.path;
+    if (item.type !== 'image' || !(this._fitFilter(item) || item.kenBurns)) return item.path;
     try {
       const st = fs.statSync(item.path);
       const file = path.join(this.stillDir, `${item.id}-${Math.round(st.mtimeMs)}.still`);
@@ -1229,7 +1248,7 @@ class Controller extends EventEmitter {
   /** Parametri posnetka za AMCP: pot, LOOP, SEEK (sličice od začetka datoteke), IN/OUT točki, filter za prileganje. */
   _mediaArgs(item, seekFrames = 0, src = null) {
     let cmd = quote(mediaPath(this._playPath(item)));
-    const vf = this._fitFilter(item);
+    const vf = this._kbFilter(item, this._fitFilter(item));
     if (vf) cmd += ` VF ${quote(vf)}`;
     if (item.type !== 'image') {
       const spec = this._spec(item, src);
@@ -1450,7 +1469,6 @@ class Controller extends EventEmitter {
       await this._layersOut(PROGRAM_CHANNEL, 0);
       await this._blurSync(PROGRAM_CHANNEL, null, 0);
     }
-    await this._kenBurns(null, null, 0);
     // Ozadje programa je bilo morda izpraznjeno; preview ponovno pripravimo.
     if (this.preview.item) {
       try {
@@ -1672,35 +1690,6 @@ class Controller extends EventEmitter {
     this._blur[ch] = want;
   }
 
-  /**
-   * Dinamični zoom (Ken Burns) na programu: slika se počasi povečuje, naslednja pomanjšuje in tako naprej.
-   * Vsaka slika začne tam, kjer je prejšnja končala, zato pri prelivu nič ne poskoči.
-   */
-  async _kenBurns(item, src, frames = 0) {
-    const L = `${PROGRAM_CHANNEL}-${LAYER_MAIN}`;
-    if (!item || !item.kenBurns) {
-      if (this._kb) {
-        await this.engine.send(`MIXER ${L} FILL 0 0 1 1${frames ? ` ${Math.round(frames)} LINEAR` : ''}`);
-      }
-      this._kb = null;
-      return;
-    }
-    const fps = fpsOf(this.settings.videoMode);
-    const secs = this._spec(item, src).seconds || 5;
-    const dur = Math.max(1, Math.round(secs * fps + (Number(this.settings.transitionFrames) || 0)));
-    if (this._kb === 'zoom') {
-      this._kb = 'base';
-      await this.engine.send(`MIXER ${L} FILL 0 0 1 1 ${dur} LINEAR`);
-      return;
-    }
-    const s = 1.15;
-    const anchors = [[0.5, 0.5], [0, 0], [1, 1], [1, 0], [0, 1], [0.5, 0]];
-    const [ax, ay] = anchors[this._kbStep++ % anchors.length];
-    const r = (v) => Math.round(v * 10000) / 10000;
-    this._kb = 'zoom';
-    await this.engine.send(`MIXER ${L} FILL ${r(-(s - 1) * ax)} ${r(-(s - 1) * ay)} ${s} ${s} ${dur} LINEAR`);
-  }
-
   /** Plasti v preview: posodobi samo, kar se je spremenilo (videi ne začnejo znova po nepotrebnem). */
   async _syncPreviewLayers(src) {
     const ch = PREVIEW_CHANNEL;
@@ -1726,7 +1715,6 @@ class Controller extends EventEmitter {
     if (this.engine.status !== 'running') return;
     await this._applyBaseMix(PROGRAM_CHANNEL, item, frames);
     await this._blurSync(PROGRAM_CHANNEL, item, frames);
-    await this._kenBurns(item, src, frames);
     const ch = PROGRAM_CHANNEL;
     const list = this._overlays(src);
     const st = this._ovl[ch];
@@ -2081,7 +2069,6 @@ class Controller extends EventEmitter {
     this._baseMix = {};
     this._blur = {};
     this._blurBg = null;
-    this._kb = null;
     this._ovl = { 1: { bank: 0, ids: [], keys: [] }, 2: { bank: 0, ids: [], keys: [] } };
     await this._addMonitors();
     if (!this.panic) await this._applyMaster().catch(() => {});

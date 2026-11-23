@@ -1,3 +1,13 @@
+# Test v0.15.1: popravki po prvem testu
+
+1. **Slideshow, nastavitve kasneje**: v glavi skupine je gumb ⚙ (poleg trajanja slike), ki odpre isto okno kot pri ustvarjanju.
+2. **Zoom pri slideshowu**: vsaka slika se zdaj sama počasi približuje (vsakič proti drugemu delu slike) in se med prehodom
+   približuje naprej, zato ob menjavi nič ne skoči. Vse slike gredo noter (nobena ven).
+   - Prosim, preveri, ali zoom teče gladko in ali je obremenjenost procesorja (spodaj CPU) v redu. Zoom računa procesor.
+3. **Širina Mediji / Playlist**: povleci navpično črto med njima (dvoklik = pol-pol). Zapomni si.
+4. **Položaj napisa**: v urejanju napisa sta drsnika *Levo / desno* in *Gor / dol*. Napis se med vlečenjem premika v živo
+   (tudi na programu). Dvoklik na drsnik = nazaj na privzeto mesto.
+
 # Test v0.15.0: PTZ prek USB, lastne predloge napisov
 
 Namesti novo verzijo čez staro. Vsebuje tudi vse iz v0.14.0 (opis spodaj): slideshow, ATEM ploščo, presete, napis na vnosu.

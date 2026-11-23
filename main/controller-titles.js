@@ -122,14 +122,16 @@ const methods = {
 
   /** Pošlje napis in nastavi njegovo velikost (MIXER FILL okoli roba, kjer napis stoji). */
   async _titleSend(ch, L, t, op) {
-    await this.engine.send(this._titleCmd(ch, L, t, op));
+    if (op) await this.engine.send(this._titleCmd(ch, L, t, op));
     const k = Number(t.size) || 1;
     const al = t.align || 'center';
     const ax = /left|^tl$|^bl$/.test(al) ? 0.07 : /right|^tr$|^br$/.test(al) ? 0.93 : 0.5;
     const mid = t.template === 'naslov' || (t.template === 'ura' && al === 'center');
     const ay = mid ? 0.5 : /^t/.test(al) ? 0.08 : 0.9;
     const r = (v) => Math.round(v * 10000) / 10000;
-    await this.engine.send(`MIXER ${ch}-${L} FILL ${r(ax * (1 - k))} ${r(ay * (1 - k))} ${k} ${k}`);
+    const dx = (Number(t.posX) || 0) / 100;
+    const dy = (Number(t.posY) || 0) / 100;
+    await this.engine.send(`MIXER ${ch}-${L} FILL ${r(ax * (1 - k) + dx)} ${r(ay * (1 - k) + dy)} ${k} ${k}`);
   },
 
   _titleCmd(ch, L, t, op) {
@@ -163,7 +165,9 @@ const methods = {
     const t = this.titles.set(id, patch);
     this._saveTitles();
     this._changed();
-    await this._refreshTitle(t, t.template !== old);
+    // samo položaj/velikost: brez ponovnega pošiljanja besedila (drsnik v živo)
+    const geom = Object.keys(patch).every((k) => ['posX', 'posY', 'size'].includes(k));
+    await this._refreshTitle(t, t.template !== old, geom);
   },
 
   async removeTitle(id) {
@@ -188,11 +192,12 @@ const methods = {
   },
 
   /** Sprememba napisa velja takoj na programu in v preview. */
-  async _refreshTitle(t, reload) {
+  async _refreshTitle(t, reload, geomOnly = false) {
     if (this.engine.status !== 'running') return;
+    const op = geomOnly ? null : reload ? 'add' : 'update';
     const L = this._titleOnLayer(t.id);
-    if (L !== null) await this._titleSend(PROGRAM_CHANNEL, L, t, reload ? 'add' : 'update').catch(() => {});
-    if (this.titlePvw === t.id) await this._titleSend(PREVIEW_CHANNEL, LAYER_TITLE, t, reload ? 'add' : 'update').catch(() => {});
+    if (L !== null) await this._titleSend(PROGRAM_CHANNEL, L, t, op).catch(() => {});
+    if (this.titlePvw === t.id) await this._titleSend(PREVIEW_CHANNEL, LAYER_TITLE, t, op).catch(() => {});
   },
 
   // ---------- na program / z njega ----------

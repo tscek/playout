@@ -262,7 +262,10 @@ input[type=number] {
 
 /* ---------- 3. korak: playlist, panika ---------- */
 
-.bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; min-height: 0; }
+.bottom { display: grid; grid-template-columns: minmax(0, var(--lib-w, 1fr)) 12px minmax(0, 1fr); gap: 0; min-height: 0; }
+.vsplitter { cursor: col-resize; position: relative; }
+.vsplitter::after { content: ''; position: absolute; top: 50%; left: 5px; height: 60px; width: 2px; margin-top: -30px; background: var(--line); border-radius: 2px; }
+.vsplitter:hover::after, .vsplitter.drag::after { background: var(--accent); height: 120px; margin-top: -60px; }
 .error-float { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); margin: 0; max-width: 80vw; z-index: 10; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
 
 .btn.panic { background: transparent; border: 2px solid var(--red); color: #ff6b6e; font-weight: 800; letter-spacing: .08em; padding: 6px 14px; }

@@ -261,7 +261,28 @@ function folderImages(rel) {
 }
 
 let slideIds = [];
+let slideGroupId = null; // urejanje obstoječe skupine
+function slideMode(edit) {
+  slideGroupId = edit;
+  $('#dlg-slide h2').textContent = edit ? 'Nastavitve slideshowa' : 'Nov slideshow';
+  $('#slide-ok').textContent = edit ? 'Shrani' : 'Ustvari';
+}
+
+function editSlideshow(g) {
+  slideMode(g.id);
+  const n = g.items.filter((e) => e.type === 'image').length;
+  $('#slide-count').textContent = `Skupina "${g.name}": ${n} slik.`;
+  $('#slide-name').value = g.name;
+  document.querySelector(`input[name=slide-mode][value=${g.end === 'stop' ? 'manual' : 'auto'}]`).checked = true;
+  $('#slide-secs').value = g.imageSeconds;
+  $('#slide-kb').checked = !!g.kenBurns;
+  $('#slide-blur').checked = !!g.blur;
+  $('#slide-loop').checked = !!g.loop;
+  $('#dlg-slide').showModal();
+}
+
 function openSlideshow(items, name) {
+  slideMode(null);
   slideIds = items.map((it) => it.id);
   if (!slideIds.length) {
     showError('Ni slik. Izberi mapo s slikami ali poišči slike z iskanjem.');
@@ -288,6 +309,19 @@ $('#btn-slideshow').onclick = () => {
 
 $('#dlg-slide').addEventListener('close', () => {
   if ($('#dlg-slide').returnValue !== 'ok') return;
+  if (slideGroupId) {
+    const auto = document.querySelector('input[name=slide-mode]:checked').value === 'auto';
+    const g = state.playlist.find((x) => x.id === slideGroupId);
+    run('playlist.setGroup', { groupId: slideGroupId, patch: {
+      name: $('#slide-name').value.trim() || (g && g.name) || 'Slideshow',
+      end: auto ? (g && g.end !== 'stop' ? g.end : 'mix') : 'stop',
+      imageSeconds: parseInt($('#slide-secs').value, 10) || 6,
+      kenBurns: $('#slide-kb').checked,
+      blur: $('#slide-blur').checked,
+      loop: $('#slide-loop').checked,
+    } });
+    return;
+  }
   run('playlist.slideshow', {
     name: $('#slide-name').value.trim() || 'Slideshow',
     mediaIds: slideIds,
@@ -514,7 +548,10 @@ function renderPlaylist() {
       n.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === 'Escape') n.blur(); };
       n.onblur = () => setTimeout(render, 0);
       l.append(document.createTextNode('slika'), n, document.createTextNode('s'));
-      head.append(l,
+      const ss = el('button', 'item-btn', '⚙');
+      ss.title = 'Nastavitve slideshowa (menjava, trajanje, zoom, zamegljeno ozadje, ponavljanje)';
+      ss.onclick = (ev) => { ev.stopPropagation(); editSlideshow(g); };
+      head.append(l, ss,
         opt('zoom', 'kenBurns', 'Dinamični zoom: slike se počasi približujejo in oddaljujejo (Ken Burns).'),
         opt('zamegli', 'blur', 'Pokončne in ozke slike dobijo ob straneh zamegljeno isto sliko namesto črnine.'));
     }
@@ -1563,6 +1600,45 @@ for (const d of document.querySelectorAll('dialog')) {
     }, 0);
   });
 }
+
+// Širina Mediji / Playlist: povleci navpično ločnico, zapomni si
+const LIB_W_KEY = 'playout.libW';
+function setLibW(pct) {
+  if (pct == null) document.documentElement.style.removeProperty('--lib-w');
+  else document.documentElement.style.setProperty('--lib-w', `${pct}%`);
+}
+setLibW(Number(lsGet(LIB_W_KEY, '')) || null);
+(() => {
+  const sp = $('#vsplitter');
+  const box = document.querySelector('.bottom');
+  let dragging = false;
+  sp.addEventListener('pointerdown', (ev) => {
+    dragging = true;
+    sp.setPointerCapture(ev.pointerId);
+    sp.classList.add('drag');
+    document.body.classList.add('resizing');
+  });
+  sp.addEventListener('pointermove', (ev) => {
+    if (!dragging) return;
+    const r = box.getBoundingClientRect();
+    const pct = Math.max(20, Math.min(80, ((ev.clientX - r.left) / r.width) * 100));
+    setLibW(Math.round(pct * 10) / 10);
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    sp.classList.remove('drag');
+    document.body.classList.remove('resizing');
+    const v = document.documentElement.style.getPropertyValue('--lib-w');
+    lsSet(LIB_W_KEY, v ? String(parseFloat(v)) : '');
+  };
+  sp.addEventListener('pointerup', end);
+  sp.addEventListener('pointercancel', end);
+  sp.addEventListener('dblclick', () => {
+    setLibW(null);
+    lsSet(LIB_W_KEY, '');
+  });
+})();
 
 // Višina monitorjev: povleci ločnico, zapomni si
 const MON_H_KEY = 'playout.monH';

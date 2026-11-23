@@ -1058,17 +1058,18 @@ test('slideshow: skupina iz slik, zamegljeno ozadje, dinamični zoom', async () 
     sent.length = 0;
     await ctl.take('cut');
     assert.ok(sent.includes('PLAY 1-9'), 'CUT zažene pripravljeno ozadje');
-    assert.ok(sent.some((c) => /^MIXER 1-10 FILL -?[\d.]+ -?[\d.]+ 1\.15 1\.15 \d+ LINEAR$/.test(c)), 'zoom se začne');
+    assert.ok(!sent.some((c) => c.startsWith('MIXER 1-10 FILL')), 'zoom je v sliki, ne v plasti');
     sent.length = 0;
     await ctl.take('auto');
     assert.ok(sent.some((c) => /^PLAY 1-9 EMPTY MIX/.test(c)), 'široka slika: ozadje se odmakne s prelivom');
-    assert.ok(sent.some((c) => /^MIXER 1-10 FILL 0 0 1 1 \d+ LINEAR$/.test(c)), 'naslednja slika se oddaljuje');
+    const play = sent.find((c) => c.startsWith('PLAY 1-10 '));
+    assert.match(play, /loop=loop=-1:size=1,setpts=N\/50\/TB,scale=w='trunc\(1920\*\(1\+0\.12\*min\(n\/\d+,1\)\)\/2\)\*2'/, 'vsaka slika se sama približuje');
+    assert.match(play, /crop=1920:1080:x='\(iw-ow\)\*0':y='\(ih-oh\)\*0'/, 'druga slika gre proti drugemu kotu');
 
     await ctl.setGroup(gid, { kenBurns: false, blur: false });
     assert.strictEqual(ctl.program.item.kenBurns, false);
     sent.length = 0;
     await ctl.clearProgram(false);
-    assert.ok(sent.includes('MIXER 1-10 FILL 0 0 1 1'));
   } finally {
     ctl._unwatch && ctl._unwatch();
     await engine.stop();

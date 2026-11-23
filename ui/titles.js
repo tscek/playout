@@ -294,6 +294,26 @@ function buildTitleEditor(box, t, on) {
   size.onchange = () => titlePatch(t.id, { size: Number(size.value) });
   row('Velikost', size);
 
+  // Položaj: zamik od mesta, ki ga določa predloga (v % zaslona). Med vlečenjem se napis premika v živo.
+  const posSlider = (key, title) => {
+    const r = document.createElement('input');
+    r.type = 'range';
+    r.min = -50;
+    r.max = 50;
+    r.step = 0.5;
+    r.dataset.key = key;
+    r.title = title;
+    let tm = null;
+    r.oninput = () => {
+      clearTimeout(tm);
+      tm = setTimeout(() => titlePatch(t.id, { [key]: Number(r.value) }), 40);
+    };
+    r.ondblclick = () => titlePatch(t.id, { [key]: 0 });
+    return r;
+  };
+  row('Levo / desno', posSlider('posX', 'Premik levo/desno (dvoklik = na mesto)'));
+  row('Gor / dol', posSlider('posY', 'Premik gor/dol (dvoklik = na mesto)'));
+
   // Logotip
   const lg = document.createElement('select');
   lg.dataset.key = 'logo';
